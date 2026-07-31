@@ -19,7 +19,26 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
-    }
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "scheme": "cortex",
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-video",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Cortex uses your location to find nearby 1v1 duel rivals."
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Cortex uses your contacts to challenge friends to math duels."
+        }
+      ]
+    ]
   }
 }
