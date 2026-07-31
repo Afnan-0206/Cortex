@@ -20,6 +20,9 @@ import Animated, {
 import { useUserStore } from '../src/store/userStore';
 import { generateDynamicMathMazePuzzle, MathMazePuzzle, MathMazeDoor } from '../src/logic/mathMazeGenerator';
 import { CortexVictoryDefeatView } from '../src/components/CortexVictoryDefeatView';
+import { CortexHowToPlayButton } from '../src/components/CortexHowToPlayButton';
+import { CortexTutorialModal } from '../src/components/CortexTutorialModal';
+import { TUTORIAL_CONFIGS } from '../src/logic/tutorialConfigs';
 
 type GamePhase = 'lobby' | 'matchmaking' | 'playing' | 'results';
 
@@ -92,6 +95,7 @@ export default function MathMazeDuelScreen() {
   // Lockout & Error States
   const [isLockedOut, setIsLockedOut] = useState(false);
   const [errorDoorId, setErrorDoorId] = useState<string | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   // Request permissions on load
   useEffect(() => {
@@ -237,6 +241,8 @@ export default function MathMazeDuelScreen() {
                 <MaterialCommunityIcons name="compass-outline" size={14} color="#22c55e" />
                 <Text style={styles.badgeHeaderText}>MATH MAZE DUEL</Text>
               </View>
+
+              <CortexHowToPlayButton onPress={() => setShowTutorial(true)} />
             </View>
 
             <View style={styles.heroBox}>
@@ -378,6 +384,16 @@ export default function MathMazeDuelScreen() {
           />
         )}
       </SafeAreaView>
+
+      <CortexTutorialModal
+        visible={showTutorial}
+        config={TUTORIAL_CONFIGS.mathMaze}
+        onClose={() => setShowTutorial(false)}
+        onCtaPress={() => {
+          setShowTutorial(false);
+          if (phase === 'lobby') handleStartMatchmaking();
+        }}
+      />
     </View>
   );
 }

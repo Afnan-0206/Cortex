@@ -21,6 +21,9 @@ import Animated, {
 import { useUserStore } from '../src/store/userStore';
 import { generateDynamicMindSnapPuzzle, MindSnapPuzzle, MindSnapItem } from '../src/logic/mindSnapGenerator';
 import { CortexVictoryDefeatView } from '../src/components/CortexVictoryDefeatView';
+import { CortexHowToPlayButton } from '../src/components/CortexHowToPlayButton';
+import { CortexTutorialModal } from '../src/components/CortexTutorialModal';
+import { TUTORIAL_CONFIGS } from '../src/logic/tutorialConfigs';
 
 type GamePhase = 'lobby' | 'matchmaking' | 'observe' | 'recall' | 'results';
 
@@ -257,6 +260,8 @@ export default function MindSnapDuelScreen() {
                 <MaterialCommunityIcons name="brain" size={14} color="#06b6d4" />
                 <Text style={styles.badgeHeaderText}>MEMORY SECTION</Text>
               </View>
+
+              <CortexHowToPlayButton onPress={() => setShowHowToPlayModal(true)} />
             </View>
 
             <View style={styles.heroBox}>
@@ -297,37 +302,15 @@ export default function MindSnapDuelScreen() {
         )}
 
         {/* ── HOW TO PLAY OVERLAY MODAL ── */}
-        <Modal visible={showHowToPlayModal} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-              <View style={styles.modalHeader}>
-                <MaterialCommunityIcons name="brain" size={28} color="#06b6d4" />
-                <Text style={styles.modalTitle}>How to play Mind Snap?</Text>
-              </View>
-
-              <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-                <Text style={styles.modalSectionTitle}>1. OBSERVE PHASE (1.5s - 2.5s)</Text>
-                <Text style={styles.modalText}>
-                  A set of symbols, colors, or sequences appears briefly. Hold them in your working memory.
-                </Text>
-
-                <Text style={styles.modalSectionTitle}>2. RECALL PHASE (5s - 8s)</Text>
-                <Text style={styles.modalText}>
-                  Select the exact symbols from a larger selection grid. Avoid distractor items!
-                </Text>
-
-                <Text style={styles.modalSectionTitle}>3. 3-ROUND MATCH</Text>
-                <Text style={styles.modalText}>
-                  Win the majority of the 3 rounds by answering faster and more accurately than your rival.
-                </Text>
-              </ScrollView>
-
-              <ScalePressable style={styles.backToGameBtn} onPress={() => setShowHowToPlayModal(false)}>
-                <Text style={styles.backToGameBtnText}>Back to Game</Text>
-              </ScalePressable>
-            </View>
-          </View>
-        </Modal>
+        <CortexTutorialModal
+          visible={showHowToPlayModal}
+          config={TUTORIAL_CONFIGS.mindSnap}
+          onClose={() => setShowHowToPlayModal(false)}
+          onCtaPress={() => {
+            setShowHowToPlayModal(false);
+            if (phase === 'lobby') handleStartMatchmaking();
+          }}
+        />
 
         {/* ── 2. MATCHMAKING PHASE ── */}
         {phase === 'matchmaking' && (

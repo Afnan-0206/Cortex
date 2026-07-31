@@ -21,6 +21,9 @@ import Animated, {
 import { useUserStore } from '../src/store/userStore';
 import { generateDynamicAbilityPuzzle, AbilityPuzzle, AbilityOption, AbilityRound } from '../src/logic/abilityGenerator';
 import { CortexVictoryDefeatView } from '../src/components/CortexVictoryDefeatView';
+import { CortexHowToPlayButton } from '../src/components/CortexHowToPlayButton';
+import { CortexTutorialModal } from '../src/components/CortexTutorialModal';
+import { TUTORIAL_CONFIGS } from '../src/logic/tutorialConfigs';
 
 type GamePhase = 'lobby' | 'matchmaking' | 'observe' | 'playing' | 'results';
 
@@ -241,6 +244,8 @@ export default function AbilityDuelScreen() {
                 <MaterialCommunityIcons name="checkbox-multiple-blank-outline" size={14} color="#ec4899" />
                 <Text style={styles.badgeHeaderText}>LOGIC SECTION</Text>
               </View>
+
+              <CortexHowToPlayButton onPress={() => setShowHowToPlayModal(true)} />
             </View>
 
             <View style={styles.heroBox}>
@@ -281,47 +286,15 @@ export default function AbilityDuelScreen() {
         )}
 
         {/* ── HOW TO PLAY OVERLAY MODAL ── */}
-        <Modal visible={showHowToPlayModal} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-              <View style={styles.modalHeader}>
-                <MaterialCommunityIcons name="checkbox-multiple-blank-outline" size={28} color="#ec4899" />
-                <Text style={styles.modalTitle}>How to play Ability Duels?</Text>
-              </View>
-
-              <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-                <Text style={styles.modalSectionTitle}>ROUND 1 — MATH SHORTCUT</Text>
-                <Text style={styles.modalText}>
-                  Solve arithmetic using shortcuts (e.g. 48 × 25 = 4800 ÷ 4 = 1200).
-                </Text>
-
-                <Text style={styles.modalSectionTitle}>ROUND 2 — LOGIC PATTERN</Text>
-                <Text style={styles.modalText}>
-                  Find missing numbers or shapes in multi-rule sequences.
-                </Text>
-
-                <Text style={styles.modalSectionTitle}>ROUND 3 — MEMORY</Text>
-                <Text style={styles.modalText}>
-                  Observe symbol positions for 2s, then answer spatial location questions.
-                </Text>
-
-                <Text style={styles.modalSectionTitle}>ROUND 4 — ESTIMATION</Text>
-                <Text style={styles.modalText}>
-                  Estimate real-life calculations quickly (e.g. 198 × 49 ≈ 10,000).
-                </Text>
-
-                <Text style={styles.modalSectionTitle}>ROUND 5 — SURPRISE</Text>
-                <Text style={styles.modalText}>
-                  Rotations, hidden rules, or real-life discount calculations.
-                </Text>
-              </ScrollView>
-
-              <ScalePressable style={styles.backToGameBtn} onPress={() => setShowHowToPlayModal(false)}>
-                <Text style={styles.backToGameBtnText}>Back to Game</Text>
-              </ScalePressable>
-            </View>
-          </View>
-        </Modal>
+        <CortexTutorialModal
+          visible={showHowToPlayModal}
+          config={TUTORIAL_CONFIGS.ability}
+          onClose={() => setShowHowToPlayModal(false)}
+          onCtaPress={() => {
+            setShowHowToPlayModal(false);
+            if (phase === 'lobby') handleStartMatchmaking();
+          }}
+        />
 
         {/* ── 2. MATCHMAKING PHASE ── */}
         {phase === 'matchmaking' && (

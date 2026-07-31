@@ -20,6 +20,9 @@ import Animated, {
 import { useUserStore } from '../src/store/userStore';
 import { generateDynamicKenKenPuzzle, KenKenPuzzle, KenKenCage } from '../src/logic/kenkenGenerator';
 import { CortexVictoryDefeatView } from '../src/components/CortexVictoryDefeatView';
+import { CortexHowToPlayButton } from '../src/components/CortexHowToPlayButton';
+import { CortexTutorialModal } from '../src/components/CortexTutorialModal';
+import { TUTORIAL_CONFIGS } from '../src/logic/tutorialConfigs';
 
 type GamePhase = 'lobby' | 'matchmaking' | 'playing' | 'results';
 
@@ -92,6 +95,7 @@ export default function KenKenDuelScreen() {
   // Lockout & Error States
   const [isLockedOut, setIsLockedOut] = useState(false);
   const [errorCell, setErrorCell] = useState<{ row: number; col: number } | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   // Request permissions on load
   useEffect(() => {
@@ -254,6 +258,8 @@ export default function KenKenDuelScreen() {
                 <MaterialCommunityIcons name="shape" size={14} color="#a78bfa" />
                 <Text style={styles.badgeHeaderText}>KENKEN DUEL</Text>
               </View>
+
+              <CortexHowToPlayButton onPress={() => setShowTutorial(true)} />
             </View>
 
             <View style={styles.heroBox}>
@@ -413,6 +419,16 @@ export default function KenKenDuelScreen() {
           />
         )}
       </SafeAreaView>
+
+      <CortexTutorialModal
+        visible={showTutorial}
+        config={TUTORIAL_CONFIGS.kenken}
+        onClose={() => setShowTutorial(false)}
+        onCtaPress={() => {
+          setShowTutorial(false);
+          if (phase === 'lobby') handleStartMatchmaking();
+        }}
+      />
     </View>
   );
 }

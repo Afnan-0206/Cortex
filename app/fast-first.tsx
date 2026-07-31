@@ -26,6 +26,9 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useUserStore } from '../src/store/userStore';
 import { CortexVictoryDefeatView } from '../src/components/CortexVictoryDefeatView';
+import { CortexHowToPlayButton } from '../src/components/CortexHowToPlayButton';
+import { CortexTutorialModal } from '../src/components/CortexTutorialModal';
+import { TUTORIAL_CONFIGS } from '../src/logic/tutorialConfigs';
 
 type GamePhase = 'lobby' | 'matchmaking' | 'playing' | 'results';
 
@@ -129,6 +132,7 @@ export default function FastAndFirstBattleScreen() {
   const [roundFeedback, setRoundFeedback] = useState<'first' | 'too_late' | 'wrong' | null>(null);
   const [isLockedOut, setIsLockedOut] = useState(false);
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   const currentQ = FAST_FIRST_SET[currentRound] || FAST_FIRST_SET[0];
 
@@ -292,6 +296,8 @@ export default function FastAndFirstBattleScreen() {
                 <MaterialCommunityIcons name="lightning-bolt" size={14} color="#84cc16" />
                 <Text style={styles.badgeHeaderText}>FAST & FIRST DUEL</Text>
               </View>
+
+              <CortexHowToPlayButton onPress={() => setShowTutorial(true)} />
             </View>
 
             <View style={styles.heroBox}>
@@ -464,6 +470,16 @@ export default function FastAndFirstBattleScreen() {
           />
         )}
       </SafeAreaView>
+
+      <CortexTutorialModal
+        visible={showTutorial}
+        config={TUTORIAL_CONFIGS.fastFirst}
+        onClose={() => setShowTutorial(false)}
+        onCtaPress={() => {
+          setShowTutorial(false);
+          if (phase === 'lobby') handleStartMatchmaking();
+        }}
+      />
     </View>
   );
 }

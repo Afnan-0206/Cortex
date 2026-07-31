@@ -21,6 +21,9 @@ import Animated, {
 import { useUserStore } from '../src/store/userStore';
 import { generateDynamicFlashAnzanPuzzle, FlashAnzanPuzzle, FlashAnzanRound } from '../src/logic/flashAnzanGenerator';
 import { CortexVictoryDefeatView } from '../src/components/CortexVictoryDefeatView';
+import { CortexHowToPlayButton } from '../src/components/CortexHowToPlayButton';
+import { CortexTutorialModal } from '../src/components/CortexTutorialModal';
+import { TUTORIAL_CONFIGS } from '../src/logic/tutorialConfigs';
 
 type GamePhase = 'lobby' | 'matchmaking' | 'flashing' | 'answering' | 'results';
 
@@ -269,6 +272,8 @@ export default function FlashAnzanDuelScreen() {
                 <MaterialCommunityIcons name="lightning-bolt" size={14} color="#facc15" />
                 <Text style={styles.badgeHeaderText}>MEMORY SECTION</Text>
               </View>
+
+              <CortexHowToPlayButton onPress={() => setShowHowToPlayModal(true)} />
             </View>
 
             <View style={styles.heroBox}>
@@ -309,37 +314,15 @@ export default function FlashAnzanDuelScreen() {
         )}
 
         {/* ── HOW TO PLAY OVERLAY MODAL ── */}
-        <Modal visible={showHowToPlayModal} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-              <View style={styles.modalHeader}>
-                <MaterialCommunityIcons name="lightning-bolt" size={28} color="#facc15" />
-                <Text style={styles.modalTitle}>How to play Flash Anzan?</Text>
-              </View>
-
-              <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-                <Text style={styles.modalSectionTitle}>1. FLASH PHASE (0.6s - 0.8s)</Text>
-                <Text style={styles.modalText}>
-                  Numbers flash one after another on screen. Keep the running sum in your head!
-                </Text>
-
-                <Text style={styles.modalSectionTitle}>2. ANSWER PHASE</Text>
-                <Text style={styles.modalText}>
-                  Type the exact sum using the keypad. Accuracy beats reckless speed!
-                </Text>
-
-                <Text style={styles.modalSectionTitle}>3. 3-ROUND MATCH</Text>
-                <Text style={styles.modalText}>
-                  Win 2 out of 3 rounds with higher speed and accuracy to defeat your rival.
-                </Text>
-              </ScrollView>
-
-              <ScalePressable style={styles.backToGameBtn} onPress={() => setShowHowToPlayModal(false)}>
-                <Text style={styles.backToGameBtnText}>Back to Game</Text>
-              </ScalePressable>
-            </View>
-          </View>
-        </Modal>
+        <CortexTutorialModal
+          visible={showHowToPlayModal}
+          config={TUTORIAL_CONFIGS.flashAnzan}
+          onClose={() => setShowHowToPlayModal(false)}
+          onCtaPress={() => {
+            setShowHowToPlayModal(false);
+            if (phase === 'lobby') handleStartMatchmaking();
+          }}
+        />
 
         {/* ── 2. MATCHMAKING PHASE ── */}
         {phase === 'matchmaking' && (

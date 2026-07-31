@@ -19,12 +19,16 @@ import { CortexCard } from '../../src/components/CortexCard';
 import { CortexButton } from '../../src/components/CortexButton';
 import { ProgressBar } from '../../src/components/ProgressBar';
 import { CortexVictoryDefeatView } from '../../src/components/CortexVictoryDefeatView';
+import { CortexHowToPlayButton } from '../../src/components/CortexHowToPlayButton';
+import { CortexTutorialModal } from '../../src/components/CortexTutorialModal';
+import { TUTORIAL_CONFIGS } from '../../src/logic/tutorialConfigs';
 
 export default function BattleScreen() {
   const router = useRouter();
   const battle = useBattleStore();
   const [userInput, setUserInput] = useState<string>('');
   const [inputErrorFlash, setInputErrorFlash] = useState<boolean>(false);
+  const [showTutorial, setShowTutorial] = useState<boolean>(false);
 
   const currentQ = battle.questions[battle.currentQuestionIndex] || battle.questions[0];
 
@@ -135,6 +139,7 @@ export default function BattleScreen() {
             <Pressable style={styles.closeBtn} onPress={handleExit}>
               <MaterialCommunityIcons name="close" size={24} color={colors.textSecondary} />
             </Pressable>
+            <CortexHowToPlayButton onPress={() => setShowTutorial(true)} />
           </View>
 
           <View style={styles.idleContainer}>
@@ -231,6 +236,7 @@ export default function BattleScreen() {
             <Text style={styles.scoreText}>
               {battle.user.score} - {battle.opponent.score}
             </Text>
+            <CortexHowToPlayButton onPress={() => setShowTutorial(true)} />
           </View>
 
           {/* Centered 60-Second Game Clock */}

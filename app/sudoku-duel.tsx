@@ -20,6 +20,9 @@ import Animated, {
 import { useUserStore } from '../src/store/userStore';
 import { generateDynamicSudokuPuzzle, SudokuPuzzle } from '../src/logic/sudokuGenerator';
 import { CortexVictoryDefeatView } from '../src/components/CortexVictoryDefeatView';
+import { CortexHowToPlayButton } from '../src/components/CortexHowToPlayButton';
+import { CortexTutorialModal } from '../src/components/CortexTutorialModal';
+import { TUTORIAL_CONFIGS } from '../src/logic/tutorialConfigs';
 
 type GamePhase = 'lobby' | 'matchmaking' | 'playing' | 'results';
 
@@ -92,6 +95,7 @@ export default function SudokuDuelScreen() {
   // Lockout & Error States
   const [isLockedOut, setIsLockedOut] = useState(false);
   const [errorCell, setErrorCell] = useState<{ row: number; col: number } | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   // Request permissions on load
   useEffect(() => {
@@ -246,6 +250,8 @@ export default function SudokuDuelScreen() {
                 <MaterialCommunityIcons name="grid" size={14} color="#38bdf8" />
                 <Text style={styles.badgeHeaderText}>SUDOKU DUEL</Text>
               </View>
+
+              <CortexHowToPlayButton onPress={() => setShowTutorial(true)} />
             </View>
 
             <View style={styles.heroBox}>
@@ -404,6 +410,16 @@ export default function SudokuDuelScreen() {
           />
         )}
       </SafeAreaView>
+
+      <CortexTutorialModal
+        visible={showTutorial}
+        config={TUTORIAL_CONFIGS.sudoku}
+        onClose={() => setShowTutorial(false)}
+        onCtaPress={() => {
+          setShowTutorial(false);
+          if (phase === 'lobby') handleStartMatchmaking();
+        }}
+      />
     </View>
   );
 }
