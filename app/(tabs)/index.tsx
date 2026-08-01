@@ -27,6 +27,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useUserStore } from '../../src/store/userStore';
 import { usePresence } from '../../lib/hooks/usePresence';
+import { useFriendStore } from '../../src/store/friendStore';
 
 type ModeType = 'math' | 'puzzle' | 'memory' | 'logic';
 
@@ -152,33 +153,16 @@ const CATEGORIES: CategoryConfig[] = [
   },
 ];
 
-interface FriendData {
-  id: string;
-  name: string;
-  handle: string;
-  avatarUri: string;
+// Real users from friendStore — SUGGESTED_FRIENDS static mock removed
+const FRIEND_AVATAR_COLORS = ['#00b4d8', '#e01e5a', '#84cc16', '#f97316', '#a855f7', '#facc15', '#0f4c5c'];
+function getAvatarColor(username: string) {
+  let hash = 0;
+  for (let i = 0; i < username.length; i++) {
+    hash = (hash << 5) - hash + username.charCodeAt(i);
+    hash |= 0;
+  }
+  return FRIEND_AVATAR_COLORS[Math.abs(hash) % FRIEND_AVATAR_COLORS.length];
 }
-
-const SUGGESTED_FRIENDS: FriendData[] = [
-  {
-    id: 'f1',
-    name: 'VIRAT',
-    handle: '@zzxzx1zx10',
-    avatarUri: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-  },
-  {
-    id: 'f2',
-    name: 'Ann_Jones',
-    handle: '@nagatoro_he...',
-    avatarUri: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=200&q=80',
-  },
-  {
-    id: 'f3',
-    name: 'Rhythm',
-    handle: '@a_rhythm_99',
-    avatarUri: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-  },
-];
 
 // Reusable Spring Pressable Component for smooth scale transitions on tap
 interface ScalePressableProps {
@@ -492,16 +476,41 @@ export default function ArenaHomeScreen() {
   const claimDailyReward = useUserStore((state) => state.claimDailyReward);
   const { onlineUsers } = usePresence();
 
+  const {
+    suggestedUsers,
+    pendingOutgoing,
+    notifications,
+    unreadCount,
+    loadDiscovery,
+    loadFriends,
+    loadNotifications,
+    sendRequest,
+    respondToRequest,
+    markAllRead,
+    subscribeRealtime,
+  } = useFriendStore();
+
   useFocusEffect(
     useCallback(() => {
       loadProfile();
+      loadFriends();
+      loadNotifications();
+      loadDiscovery();
     }, [loadProfile])
   );
 
+  useEffect(() => {
+    const unsubscribe = subscribeRealtime();
+    return unsubscribe;
+  }, []);
+
   const [selectedMode, setSelectedMode] = useState<ModeType>('math');
-  const [sentRequests, setSentRequests] = useState<Record<string, boolean>>({});
+  const [showNotifModal, setShowNotifModal] = useState(false);
   const [showChatModal, setShowChatModal] = useState(false);
   const [showDailyModal, setShowDailyModal] = useState(false);
+
+  const outgoingIds = new Set(pendingOutgoing.map(r => r.to_user));
+  const pendingIncomingRequests = notifications.filter(n => n.type === 'friend_request' && !n.read);
 
   const dailyProgress = profile.dailyProgress ?? 0;
   const dailyRewardClaimed = profile.dailyRewardClaimed ?? false;
@@ -515,9 +524,9 @@ export default function ArenaHomeScreen() {
     setSelectedMode(modeId);
   };
 
-  const handleSendRequest = (friendId: string) => {
+  const handleSendRequest = async (userId: string) => {
     Haptics.selectionAsync();
-    setSentRequests((prev) => ({ ...prev, [friendId]: !prev[friendId] }));
+    await sendRequest(userId);
   };
 
   const handleSimulateDailyProgress = async () => {
@@ -588,15 +597,23 @@ export default function ArenaHomeScreen() {
             </View>
           </View>
 
-          {/* Right Chat Icon Button */}
+          {/* Right Notification Bell Button */}
           <ScalePressable
             onPress={() => {
               Haptics.selectionAsync();
-              setShowChatModal(true);
+              setShowNotifModal(true);
+              markAllRead();
             }}
             style={styles.chatButton}
           >
-            <MaterialCommunityIcons name="message-outline" size={18} color="#ffffff" />
+            <View style={{ position: 'relative' }}>
+              <MaterialCommunityIcons name="bell-outline" size={18} color="#ffffff" />
+              {unreadCount > 0 && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                </View>
+              )}
+            </View>
           </ScalePressable>
         </Animated.View>
 
@@ -815,45 +832,58 @@ export default function ArenaHomeScreen() {
           ))}
         </Animated.View>
 
-        {/* ── 7. SUGGESTED FRIENDS SECTION ── */}
+        {/* ── 7. SUGGESTED FRIENDS SECTION (REAL USERS) ── */}
         <View style={styles.friendsSection}>
           <View style={styles.friendsHeaderRow}>
             <Text style={styles.sectionLabel}>SUGGESTED FRIENDS</Text>
-            <ScalePressable onPress={() => router.push('/profile')}>
+            <ScalePressable onPress={() => router.push('/friends')}>
               <Text style={styles.viewAllText}>VIEW ALL</Text>
             </ScalePressable>
           </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.friendsScroll}
-          >
-            {SUGGESTED_FRIENDS.map((friend) => (
-              <View key={friend.id} style={styles.friendCard}>
-                <Image source={{ uri: friend.avatarUri }} style={styles.friendAvatar} />
-                <Text style={styles.friendName} numberOfLines={1}>{friend.name}</Text>
-                <Text style={styles.friendHandle} numberOfLines={1}>{friend.handle}</Text>
+          {suggestedUsers.length === 0 ? (
+            <View style={styles.friendsEmptyRow}>
+              <MaterialCommunityIcons name="account-search-outline" size={24} color="#374151" />
+              <Text style={styles.friendsEmptyText}>Discovering nearby players…</Text>
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.friendsScroll}
+            >
+              {suggestedUsers.slice(0, 8).map((user) => {
+                const isSent = outgoingIds.has(user.id);
+                const color = getAvatarColor(user.username);
+                return (
+                  <View key={user.id} style={styles.friendCard}>
+                    <View style={[styles.friendAvatarCircle, { backgroundColor: color }]}>
+                      <Text style={styles.friendAvatarLetter}>{user.username[0]?.toUpperCase() || 'A'}</Text>
+                    </View>
+                    <Text style={styles.friendName} numberOfLines={1}>{user.username.toUpperCase()}</Text>
+                    <Text style={styles.friendHandle} numberOfLines={1}>⚡ {user.rating}</Text>
 
-                <ScalePressable
-                  style={[
-                    styles.sendRequestBtn,
-                    sentRequests[friend.id] && { borderColor: '#84cc16', backgroundColor: '#182414' },
-                  ]}
-                  onPress={() => handleSendRequest(friend.id)}
-                >
-                  <MaterialCommunityIcons
-                    name={sentRequests[friend.id] ? 'check' : 'account-plus'}
-                    size={14}
-                    color="#84cc16"
-                  />
-                  <Text style={styles.sendRequestText}>
-                    {sentRequests[friend.id] ? 'SENT' : 'SEND REQUEST'}
-                  </Text>
-                </ScalePressable>
-              </View>
-            ))}
-          </ScrollView>
+                    <ScalePressable
+                      style={[
+                        styles.sendRequestBtn,
+                        isSent && { borderColor: '#374151', backgroundColor: '#0c0e12' },
+                      ]}
+                      onPress={() => handleSendRequest(user.id)}
+                    >
+                      <MaterialCommunityIcons
+                        name={isSent ? 'check' : 'account-plus'}
+                        size={14}
+                        color={isSent ? '#6b7280' : '#84cc16'}
+                      />
+                      <Text style={[styles.sendRequestText, isSent && { color: '#6b7280' }]}>
+                        {isSent ? 'REQUESTED' : 'SEND REQUEST'}
+                      </Text>
+                    </ScalePressable>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          )}
         </View>
 
         {/* ── 8. SHARE THE CHALLENGE BANNER ── */}
@@ -998,22 +1028,76 @@ export default function ArenaHomeScreen() {
         </Pressable>
       </Modal>
 
-      {/* Chat / Message Modal */}
+      {/* Notification Drawer Modal */}
       <Modal
-        visible={showChatModal}
+        visible={showNotifModal}
         transparent
-        animationType="fade"
-        onRequestClose={() => setShowChatModal(false)}
+        animationType="slide"
+        onRequestClose={() => setShowNotifModal(false)}
       >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setShowChatModal(false)}
-        >
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Messages & Squad Chat</Text>
-            <Text style={styles.modalSub}>No new messages right now. Challenge a friend to start a duel chat!</Text>
-            <ScalePressable style={styles.closeModalBtn} onPress={() => setShowChatModal(false)}>
-              <Text style={styles.closeModalText}>Close</Text>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowNotifModal(false)}>
+          <View style={[styles.modalContent, { maxHeight: '70%' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <Text style={styles.modalTitle}>NOTIFICATIONS</Text>
+              <ScalePressable onPress={() => setShowNotifModal(false)} style={{}}>
+                <MaterialCommunityIcons name="close" size={20} color="#6b7280" />
+              </ScalePressable>
+            </View>
+            {notifications.length === 0 ? (
+              <Text style={styles.modalSub}>No notifications yet. Send friend requests to connect with players!</Text>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {notifications.map((notif) => (
+                  <View key={notif.id} style={styles.notifRow}>
+                    <View style={[styles.notifIconBox, { backgroundColor: notif.type === 'friend_request' ? '#182414' : '#1a1230' }]}>
+                      <MaterialCommunityIcons
+                        name={notif.type === 'friend_request' ? 'account-plus' : notif.type === 'friend_accepted' ? 'account-check' : 'sword-cross'}
+                        size={18}
+                        color={notif.type === 'friend_accepted' ? '#84cc16' : '#a855f7'}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.notifMsg}>
+                        {notif.type === 'friend_request'
+                          ? `${notif.payload?.from_username ?? 'Someone'} sent you a friend request`
+                          : notif.type === 'friend_accepted'
+                          ? `${notif.payload?.from_username ?? 'Someone'} accepted your request`
+                          : 'New challenge received'}
+                      </Text>
+                      {notif.type === 'friend_request' && (
+                        <View style={styles.notifActions}>
+                          <ScalePressable
+                            style={styles.notifAcceptBtn}
+                            onPress={async () => {
+                              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                              await respondToRequest(notif.payload.request_id!, true);
+                              setShowNotifModal(false);
+                            }}
+                          >
+                            <Text style={styles.notifAcceptText}>ACCEPT</Text>
+                          </ScalePressable>
+                          <ScalePressable
+                            style={styles.notifDeclineBtn}
+                            onPress={async () => {
+                              await respondToRequest(notif.payload.request_id!, false);
+                              setShowNotifModal(false);
+                            }}
+                          >
+                            <Text style={styles.notifDeclineText}>DECLINE</Text>
+                          </ScalePressable>
+                        </View>
+                      )}
+                    </View>
+                    {!notif.read && <View style={styles.notifUnreadDot} />}
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+            <ScalePressable
+              style={[styles.closeModalBtn, { marginTop: 12 }]}
+              onPress={() => { setShowNotifModal(false); router.push('/friends'); }}
+            >
+              <Text style={styles.closeModalText}>VIEW ALL FRIENDS</Text>
             </ScalePressable>
           </View>
         </Pressable>
@@ -1406,11 +1490,18 @@ const styles = StyleSheet.create({
     padding: 12,
     alignItems: 'center',
   },
-  friendAvatar: {
+  friendAvatarCircle: {
     width: 44,
     height: 44,
     borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 8,
+  },
+  friendAvatarLetter: {
+    fontFamily: 'Inter_800ExtraBold',
+    color: '#ffffff',
+    fontSize: 18,
   },
   friendName: {
     fontFamily: 'Inter_800ExtraBold',
@@ -1424,6 +1515,18 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textAlign: 'center',
     marginTop: 1,
+  },
+  friendsEmptyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+  },
+  friendsEmptyText: {
+    fontFamily: 'Inter_500Medium',
+    color: '#4b5563',
+    fontSize: 12,
   },
   sendRequestBtn: {
     flexDirection: 'row',
@@ -1443,6 +1546,82 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_800ExtraBold',
     color: '#84cc16',
     fontSize: 9,
+  },
+  // Notification badge on bell icon
+  notifBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -8,
+    backgroundColor: '#ef4444',
+    borderRadius: 8,
+    minWidth: 16,
+    paddingHorizontal: 3,
+    paddingVertical: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifBadgeText: {
+    color: '#ffffff',
+    fontSize: 8,
+    fontWeight: '800',
+  },
+  // Notification row in modal
+  notifRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1f2e',
+  },
+  notifIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifMsg: {
+    fontFamily: 'Inter_500Medium',
+    color: '#d1d5db',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  notifActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  notifAcceptBtn: {
+    backgroundColor: '#84cc16',
+    borderRadius: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  notifAcceptText: {
+    fontFamily: 'Inter_800ExtraBold',
+    color: '#0d0e12',
+    fontSize: 10,
+  },
+  notifDeclineBtn: {
+    backgroundColor: '#1a0f0f',
+    borderWidth: 1,
+    borderColor: '#f87171',
+    borderRadius: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  notifDeclineText: {
+    fontFamily: 'Inter_800ExtraBold',
+    color: '#f87171',
+    fontSize: 10,
+  },
+  notifUnreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#84cc16',
+    marginTop: 4,
   },
 
   // ── 8. SHARE THE CHALLENGE BANNER ──
