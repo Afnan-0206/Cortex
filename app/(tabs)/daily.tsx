@@ -187,7 +187,13 @@ export default function DailyChallengeScreen() {
             <Text style={styles.completedSub}>
               You have completed all 4 sections for {formattedDate}. Your streak is locked in!
             </Text>
-            <Pressable style={styles.returnBtn} onPress={() => router.push('/(tabs)')}>
+            <Pressable
+              style={styles.returnBtn}
+              onPress={async () => {
+                await useUserStore.getState().loadProfile();
+                router.push('/(tabs)');
+              }}
+            >
               <Text style={styles.returnBtnText}>Return to Arena</Text>
             </Pressable>
           </Animated.View>

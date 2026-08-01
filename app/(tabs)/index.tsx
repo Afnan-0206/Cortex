@@ -661,7 +661,7 @@ export default function ArenaHomeScreen() {
               <View>
                 <Text style={styles.dailyTitle}>TODAY'S DAILY WORKOUT</Text>
                 <Text style={styles.dailySubtitle}>
-                  {profile.dailyRewardClaimed
+                  {profile.dailyRewardClaimed || profile.dailyProgress === 4
                     ? 'Today’s Workout Completed (+250 XP • +50 Coins)'
                     : '4-Section Workout • Complete all sections to advance streak'}
                 </Text>
@@ -671,9 +671,9 @@ export default function ArenaHomeScreen() {
 
             {/* Real Section Progress Bar */}
             <AnimatedProgressBar
-              current={profile.dailyProgress ?? 0}
+              current={profile.dailyRewardClaimed || profile.dailyProgress === 4 ? 4 : (profile.dailyProgress ?? 0)}
               total={4}
-              claimed={profile.dailyRewardClaimed ?? false}
+              claimed={profile.dailyRewardClaimed || profile.dailyProgress === 4 ? true : false}
             />
           </ScalePressable>
         </Animated.View>

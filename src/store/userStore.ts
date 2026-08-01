@@ -102,8 +102,9 @@ export const useUserStore = create<UserStore>((set, get) => ({
         dbDailyProgress = dbDaily;
       }
 
-      const isTodayDone = dbDailyProgress?.is_completed || dbProfileData?.last_daily_completed_date === todayStr;
-      const todayProgress = isTodayDone ? 4 : (dbDailyProgress ? (dbDailyProgress.completed_sections ?? 0) : 0);
+      const isTodayDone =
+        dbDailyProgress?.is_completed === true ||
+        dbProfileData?.last_daily_completed_date === todayStr;
 
       if (jsonStr) {
         const parsed: UserProfile = JSON.parse(jsonStr);
@@ -116,11 +117,11 @@ export const useUserStore = create<UserStore>((set, get) => ({
               ...DEFAULT_PROFILE,
               isLoggedIn: isAuthenticated,
               name: dbProfileData?.username || 'Athlete',
-              brainPoints: dbProfileData?.xp ?? dbProfileData?.rating ?? 0,
+              brainPoints: Math.max(dbProfileData?.xp ?? 0, dbProfileData?.rating ?? 0),
               streak: dbProfileData?.streak ?? 0,
               longestStreak: dbProfileData?.best_streak ?? 0,
               coins: dbProfileData?.coins ?? 0,
-              dailyProgress: todayProgress,
+              dailyProgress: isTodayDone ? 4 : (dbDailyProgress?.completed_sections ?? 0),
               dailyRewardClaimed: isTodayDone,
               first_game_completed: dbProfileData?.first_game_completed ?? false,
               lastCompletedDate: isTodayDone ? todayStr : (dbProfileData?.last_daily_completed_date || ''),
@@ -130,44 +131,62 @@ export const useUserStore = create<UserStore>((set, get) => ({
           return;
         }
 
-        let dailyProgress = isTodayDone ? 4 : (dbDailyProgress ? todayProgress : (parsed.lastCompletedDate === todayStr ? (parsed.dailyProgress ?? 0) : 0));
-        let dailyRewardClaimed = isTodayDone ? true : (dbDailyProgress ? isTodayDone : (parsed.lastCompletedDate === todayStr ? (parsed.dailyRewardClaimed ?? false) : false));
-        let completedQuests = parsed.completedQuests ?? [];
+        const isFullyDoneToday =
+          isTodayDone ||
+          (parsed.lastCompletedDate === todayStr && (parsed.dailyRewardClaimed === true || parsed.dailyProgress === 4));
 
-        if (parsed.lastCompletedDate && parsed.lastCompletedDate !== todayStr && !isTodayDone && !dbDailyProgress) {
-          dailyProgress = 0;
-          dailyRewardClaimed = false;
+        const dailyProgress = isFullyDoneToday
+          ? 4
+          : Math.max(
+              dbDailyProgress?.completed_sections ?? 0,
+              parsed.lastCompletedDate === todayStr ? (parsed.dailyProgress ?? 0) : 0
+            );
+
+        const dailyRewardClaimed = isFullyDoneToday;
+
+        let completedQuests = parsed.completedQuests ?? [];
+        if (parsed.lastCompletedDate && parsed.lastCompletedDate !== todayStr && !isFullyDoneToday && !dbDailyProgress) {
           completedQuests = [];
         }
+
+        const finalXP = Math.max(dbProfileData?.xp ?? 0, dbProfileData?.rating ?? 0, parsed.brainPoints ?? 0);
+        const finalCoins = Math.max(dbProfileData?.coins ?? 0, parsed.coins ?? 0);
+        const finalStreak = Math.max(dbProfileData?.streak ?? 0, parsed.streak ?? 0);
+        const finalBestStreak = Math.max(dbProfileData?.best_streak ?? 0, parsed.longestStreak ?? 0, finalStreak);
 
         const mergedProfile: UserProfile = {
           ...DEFAULT_PROFILE,
           ...parsed,
           isLoggedIn: isAuthenticated,
           name: dbProfileData?.username || parsed.name || 'Athlete',
-          brainPoints: dbProfileData?.xp ?? dbProfileData?.rating ?? parsed.brainPoints ?? 0,
-          streak: dbProfileData?.streak ?? parsed.streak ?? 0,
-          longestStreak: dbProfileData?.best_streak ?? parsed.longestStreak ?? 0,
-          coins: dbProfileData?.coins ?? parsed.coins ?? 0,
+          brainPoints: finalXP,
+          streak: finalStreak,
+          longestStreak: finalBestStreak,
+          coins: finalCoins,
           dailyProgress,
           dailyRewardClaimed,
           completedQuests,
           first_game_completed: dbProfileData?.first_game_completed ?? parsed.first_game_completed ?? false,
-          lastCompletedDate: isTodayDone ? todayStr : (dbProfileData?.last_daily_completed_date || parsed.lastCompletedDate || ''),
+          lastCompletedDate: isFullyDoneToday ? todayStr : (dbProfileData?.last_daily_completed_date || parsed.lastCompletedDate || ''),
         };
 
         set({ profile: mergedProfile, isLoading: false });
         AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(mergedProfile)).catch(() => {});
       } else {
+        const finalXP = Math.max(dbProfileData?.xp ?? 0, dbProfileData?.rating ?? 0);
+        const finalCoins = dbProfileData?.coins ?? 0;
+        const finalStreak = dbProfileData?.streak ?? 0;
+        const finalBestStreak = Math.max(dbProfileData?.best_streak ?? 0, finalStreak);
+
         const mergedProfile: UserProfile = {
           ...DEFAULT_PROFILE,
           isLoggedIn: isAuthenticated,
           name: dbProfileData?.username || 'Athlete',
-          brainPoints: dbProfileData?.xp ?? dbProfileData?.rating ?? 0,
-          streak: dbProfileData?.streak ?? 0,
-          longestStreak: dbProfileData?.best_streak ?? 0,
-          coins: dbProfileData?.coins ?? 0,
-          dailyProgress: todayProgress,
+          brainPoints: finalXP,
+          streak: finalStreak,
+          longestStreak: finalBestStreak,
+          coins: finalCoins,
+          dailyProgress: isTodayDone ? 4 : (dbDailyProgress?.completed_sections ?? 0),
           dailyRewardClaimed: isTodayDone,
           first_game_completed: dbProfileData?.first_game_completed ?? false,
           lastCompletedDate: isTodayDone ? todayStr : (dbProfileData?.last_daily_completed_date || ''),
@@ -390,6 +409,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
   incrementDailyProgress: async (amount = 1) => {
     const { profile } = get();
     const todayStr = new Date().toISOString().split('T')[0];
+
+    // If today's workout is already completed or locked in, do not mutate dailyProgress!
+    if (profile.dailyProgress === 4 || profile.dailyRewardClaimed || profile.lastCompletedDate === todayStr) {
+      return;
+    }
+
     const currentProgress = profile.dailyProgress ?? 0;
     const nextProgress = Math.min(4, currentProgress + amount);
 
