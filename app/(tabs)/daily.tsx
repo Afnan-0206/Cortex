@@ -216,32 +216,61 @@ export default function DailyChallengeScreen() {
               ) : null}
             </View>
 
+            {/* Inline Answer Feedback Banner */}
+            {feedback !== null && (
+              <Animated.View entering={FadeInDown.duration(200)} style={[styles.feedbackBanner, feedback === 'correct' ? styles.feedbackBannerCorrect : styles.feedbackBannerWrong]}>
+                <MaterialCommunityIcons
+                  name={feedback === 'correct' ? 'check-circle' : 'close-circle'}
+                  size={18}
+                  color={feedback === 'correct' ? '#4ade80' : '#f87171'}
+                />
+                <Text style={[styles.feedbackBannerText, feedback === 'correct' ? styles.feedbackTextCorrect : styles.feedbackTextWrong]}>
+                  {feedback === 'correct'
+                    ? '✓ Correct! +10 XP'
+                    : `✕ Almost — correct answer was ${activeQuestion.answer}`}
+                </Text>
+              </Animated.View>
+            )}
+
             {/* Option Buttons */}
             <View style={styles.optionsGrid}>
               {activeQuestion.options.map((opt: number, i: number) => {
                 const isSelected = selectedOption === opt;
-                const isCorrect = feedback === 'correct' && isSelected;
-                const isWrong = feedback === 'wrong' && isSelected;
+                const isCorrectTarget = Number(opt) === Number(activeQuestion.answer);
+                const isSelectedCorrect = feedback === 'correct' && isSelected;
+                const isSelectedWrong = feedback === 'wrong' && isSelected;
+                const isTargetHighlight = feedback === 'wrong' && isCorrectTarget;
 
                 return (
                   <Pressable
                     key={i}
                     style={[
                       styles.optionBtn,
-                      isCorrect && styles.optionBtnCorrect,
-                      isWrong && styles.optionBtnWrong,
+                      isSelectedCorrect && styles.optionBtnCorrect,
+                      isSelectedWrong && styles.optionBtnWrong,
+                      isTargetHighlight && styles.optionBtnTargetHighlight,
                     ]}
                     onPress={() => handleOptionPress(opt)}
                     disabled={feedback !== null || isSubmitting}
                   >
-                    <Text
-                      style={[
-                        styles.optionText,
-                        (isCorrect || isWrong) && styles.optionTextHighlight,
-                      ]}
-                    >
-                      {opt}
-                    </Text>
+                    <View style={styles.optionContentRow}>
+                      <Text
+                        style={[
+                          styles.optionText,
+                          (isSelectedCorrect || isTargetHighlight) && styles.optionTextCorrect,
+                          isSelectedWrong && styles.optionTextWrong,
+                        ]}
+                      >
+                        {opt}
+                      </Text>
+                      {isSelectedCorrect ? (
+                        <MaterialCommunityIcons name="check-circle" size={18} color="#4ade80" />
+                      ) : isSelectedWrong ? (
+                        <MaterialCommunityIcons name="close-circle" size={18} color="#f87171" />
+                      ) : isTargetHighlight ? (
+                        <MaterialCommunityIcons name="check" size={18} color="#4ade80" />
+                      ) : null}
+                    </View>
                   </Pressable>
                 );
               })}
@@ -331,16 +360,27 @@ const styles = StyleSheet.create({
   cardDisciplineText: { color: '#84cc16', fontSize: 11, fontWeight: '800' },
   questionCounter: { color: '#94a3b8', fontSize: 13, fontWeight: '700' },
   sectionSubtitleText: { color: '#64748b', fontSize: 13, marginBottom: 24 },
-  promptBox: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#090b10', borderRadius: 20, paddingVertical: 28, paddingHorizontal: 16, marginBottom: 24, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.06)' },
+  promptBox: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#090b10', borderRadius: 20, paddingVertical: 28, paddingHorizontal: 16, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.06)' },
   operand1Text: { fontSize: 32, fontWeight: '900', color: '#ffffff', textAlign: 'center' },
   operatorText: { fontSize: 32, fontWeight: '900', color: '#84cc16', textAlign: 'center', marginTop: 4 },
 
+  // Inline Feedback Banner
+  feedbackBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 14, marginBottom: 16, borderWidth: 1 },
+  feedbackBannerCorrect: { backgroundColor: 'rgba(74, 222, 128, 0.12)', borderColor: '#4ade80' },
+  feedbackBannerWrong: { backgroundColor: 'rgba(248, 113, 113, 0.12)', borderColor: '#f87171' },
+  feedbackBannerText: { fontSize: 13, fontWeight: '800' },
+  feedbackTextCorrect: { color: '#4ade80' },
+  feedbackTextWrong: { color: '#f87171' },
+
   optionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  optionBtn: { width: '47%', height: 60, backgroundColor: '#181e2e', borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.1)' },
-  optionBtnCorrect: { backgroundColor: '#15803d', borderColor: '#22c55e' },
-  optionBtnWrong: { backgroundColor: '#991b1b', borderColor: '#ef4444' },
+  optionBtn: { width: '47%', height: 60, backgroundColor: '#181e2e', borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.1)', paddingHorizontal: 12 },
+  optionContentRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%' },
+  optionBtnCorrect: { backgroundColor: 'rgba(74, 222, 128, 0.18)', borderColor: '#4ade80' },
+  optionBtnWrong: { backgroundColor: 'rgba(248, 113, 113, 0.18)', borderColor: '#f87171' },
+  optionBtnTargetHighlight: { backgroundColor: 'rgba(74, 222, 128, 0.12)', borderColor: '#4ade80' },
   optionText: { color: '#ffffff', fontSize: 22, fontWeight: '800' },
-  optionTextHighlight: { color: '#ffffff' },
+  optionTextCorrect: { color: '#4ade80' },
+  optionTextWrong: { color: '#f87171' },
 
   // Completed Box
   completedBox: { backgroundColor: '#121622', borderRadius: 24, padding: 32, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(132, 204, 22, 0.3)' },

@@ -410,7 +410,10 @@ export default function FastAndFirstBattleScreen() {
               <View style={styles.optionsGrid}>
                 {currentQ.options.map((opt, idx) => {
                   const isSelected = selectedOption === opt;
-                  const isCorrect = opt === currentQ.answer;
+                  const isCorrectTarget = Number(opt) === Number(currentQ.answer);
+                  const isSelectedCorrect = roundFeedback === 'first' && isSelected;
+                  const isSelectedWrong = roundFeedback === 'wrong' && isSelected;
+                  const isTargetHighlight = roundFeedback === 'wrong' && isCorrectTarget;
 
                   return (
                     <ScalePressable
@@ -419,20 +422,31 @@ export default function FastAndFirstBattleScreen() {
                       containerStyle={styles.optBtnContainer}
                       style={[
                         styles.optBtn,
-                        isSelected && isCorrect && styles.optBtnCorrect,
-                        isSelected && !isCorrect && styles.optBtnWrong,
-                        isLockedOut && styles.optBtnDisabled,
+                        isSelectedCorrect && styles.optBtnCorrect,
+                        isSelectedWrong && styles.optBtnWrong,
+                        isTargetHighlight && styles.optBtnTargetHighlight,
+                        isLockedOut && !isSelectedWrong && !isTargetHighlight && styles.optBtnDisabled,
                       ]}
                       onPress={() => handleSelectOption(opt)}
                     >
-                      <Text
-                        style={[
-                          styles.optBtnText,
-                          isSelected && isCorrect && styles.optBtnTextCorrect,
-                        ]}
-                      >
-                        {opt}
-                      </Text>
+                      <View style={styles.optContentRow}>
+                        <Text
+                          style={[
+                            styles.optBtnText,
+                            (isSelectedCorrect || isTargetHighlight) && styles.optBtnTextCorrect,
+                            isSelectedWrong && styles.optBtnTextWrong,
+                          ]}
+                        >
+                          {opt}
+                        </Text>
+                        {isSelectedCorrect ? (
+                          <MaterialCommunityIcons name="check-circle" size={18} color="#4ade80" />
+                        ) : isSelectedWrong ? (
+                          <MaterialCommunityIcons name="close-circle" size={18} color="#f87171" />
+                        ) : isTargetHighlight ? (
+                          <MaterialCommunityIcons name="check" size={18} color="#4ade80" />
+                        ) : null}
+                      </View>
                     </ScalePressable>
                   );
                 })}
@@ -757,18 +771,30 @@ const styles = StyleSheet.create({
     height: 60,
     backgroundColor: '#171920',
     borderRadius: 16,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#20242d',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  optContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    width: '100%',
   },
   optBtnCorrect: {
-    backgroundColor: '#22c55e',
-    borderColor: '#22c55e',
+    backgroundColor: 'rgba(74, 222, 128, 0.18)',
+    borderColor: '#4ade80',
   },
   optBtnWrong: {
-    backgroundColor: '#ef4444',
-    borderColor: '#ef4444',
+    backgroundColor: 'rgba(248, 113, 113, 0.18)',
+    borderColor: '#f87171',
+  },
+  optBtnTargetHighlight: {
+    backgroundColor: 'rgba(74, 222, 128, 0.12)',
+    borderColor: '#4ade80',
   },
   optBtnDisabled: {
     opacity: 0.4,
@@ -779,7 +805,10 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   optBtnTextCorrect: {
-    color: '#000000',
+    color: '#4ade80',
+  },
+  optBtnTextWrong: {
+    color: '#f87171',
   },
 
   /* Results Phase */
