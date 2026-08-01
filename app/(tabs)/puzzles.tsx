@@ -100,14 +100,23 @@ const ScalePressable: React.FC<ScalePressableProps> = ({
 
 // Breathing Neural Video Component for Cortex Space
 const BreathingOrb = () => {
-  const resolved = Image.resolveAssetSource(require('../../assets/breathing.mp4'));
-  const videoUri = resolved?.uri || resolved;
+  let videoUri = '';
+  try {
+    const { Asset } = require('expo-asset');
+    videoUri = Asset.fromModule(require('../../assets/breathing.mp4'))?.uri || '';
+  } catch {
+    try {
+      videoUri = (Image as any).resolveAssetSource?.(require('../../assets/breathing.mp4'))?.uri || '';
+    } catch {
+      videoUri = '';
+    }
+  }
 
   if (Platform.OS === 'web') {
     return (
       <View style={styles.videoOrbWrapper}>
         <video
-          src={typeof videoUri === 'string' ? videoUri : (videoUri as any)?.uri}
+          src={videoUri}
           autoPlay
           loop
           muted
