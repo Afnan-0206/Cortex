@@ -30,7 +30,11 @@ import {
 import { colors } from '../src/theme';
 import { useUserStore } from '../src/store/userStore';
 
+import { useAuthGate } from '../lib/hooks/useAuthGate';
+
 export default function RootLayout() {
+  useAuthGate();
+  
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,

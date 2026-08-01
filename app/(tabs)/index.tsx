@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Animated, {
@@ -26,6 +26,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { useUserStore } from '../../src/store/userStore';
+import { usePresence } from '../../lib/hooks/usePresence';
 
 type ModeType = 'math' | 'puzzle' | 'memory' | 'logic';
 
@@ -486,8 +487,16 @@ const mascotStyles = StyleSheet.create({
 export default function ArenaHomeScreen() {
   const router = useRouter();
   const profile = useUserStore((state) => state.profile);
+  const loadProfile = useUserStore((state) => state.loadProfile);
   const incrementDailyProgress = useUserStore((state) => state.incrementDailyProgress);
   const claimDailyReward = useUserStore((state) => state.claimDailyReward);
+  const { onlineUsers } = usePresence();
+
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile();
+    }, [loadProfile])
+  );
 
   const [selectedMode, setSelectedMode] = useState<ModeType>('math');
   const [sentRequests, setSentRequests] = useState<Record<string, boolean>>({});
@@ -496,8 +505,8 @@ export default function ArenaHomeScreen() {
 
   const dailyProgress = profile.dailyProgress ?? 0;
   const dailyRewardClaimed = profile.dailyRewardClaimed ?? false;
-  const displayXP = profile.brainPoints > 0 ? profile.brainPoints : 60;
-  const displayStreak = profile.streak > 0 ? profile.streak : 3;
+  const displayXP = profile.brainPoints ?? 0;
+  const displayStreak = profile.streak ?? 0;
 
   const activeCategory = CATEGORIES.find((c) => c.id === selectedMode) || CATEGORIES[0];
 
@@ -558,12 +567,12 @@ export default function ArenaHomeScreen() {
         <Animated.View entering={FadeInDown.duration(300)} style={styles.topHeaderRow}>
           {/* Main Capsule Container */}
           <View style={styles.statsCapsule}>
-            {/* Green Target Pill */}
+            {/* Coins Pill */}
             <View style={styles.statPillGreen}>
               <View style={styles.greenTargetCircle}>
-                <MaterialCommunityIcons name="crosshairs-gps" size={12} color="#ffffff" />
+                <MaterialCommunityIcons name="circle-multiple" size={12} color="#ffffff" />
               </View>
-              <Text style={styles.statPillValue}>565</Text>
+              <Text style={styles.statPillValue}>{profile.coins ?? 0}</Text>
             </View>
 
             {/* Streak Flame Pill */}
@@ -606,56 +615,30 @@ export default function ArenaHomeScreen() {
           >
             {/* Story 1: YOU */}
             <View style={styles.storyItem}>
-              <View style={[styles.avatarCircle, { backgroundColor: '#0080ff' }]}>
-                <Text style={styles.avatarLetter}>G</Text>
+              <View style={[styles.avatarCircle, { backgroundColor: '#84cc16' }]}>
+                <Text style={styles.avatarLetter}>{profile.name?.[0]?.toUpperCase() || 'U'}</Text>
+                <PulsingOnlineDot />
               </View>
               <Text style={styles.storyName}>YOU</Text>
             </View>
 
-            {/* Story 2: HARICHAR... */}
-            <View style={styles.storyItem}>
-              <View style={[styles.avatarCircle, { backgroundColor: '#00b4d8' }]}>
-                <Text style={styles.avatarLetter}>H</Text>
-                <PulsingOnlineDot />
-              </View>
-              <Text style={styles.storyName} numberOfLines={1}>HARICHAR...</Text>
-            </View>
-
-            {/* Story 3: ZOMBIEAP... */}
-            <View style={styles.storyItem}>
-              <View style={[styles.avatarCircle, { backgroundColor: '#0f4c5c' }]}>
-                <Image
-                  source={{ uri: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=150&q=80' }}
-                  style={styles.avatarImage}
-                />
-                <PulsingOnlineDot />
-              </View>
-              <Text style={styles.storyName} numberOfLines={1}>ZOMBIEAP...</Text>
-            </View>
-
-            {/* Story 4: MATHLETE... */}
-            <View style={styles.storyItem}>
-              <View style={[styles.avatarCircle, { backgroundColor: '#e01e5a' }]}>
-                <Image
-                  source={{ uri: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80' }}
-                  style={styles.avatarImage}
-                />
-                <PulsingOnlineDot />
-              </View>
-              <Text style={styles.storyName} numberOfLines={1}>MATHLETE...</Text>
-            </View>
-
-            {/* Story 5: ABHISHRU... */}
-            <View style={styles.storyItem}>
-              <View style={[styles.avatarCircle, { backgroundColor: '#4a2810' }]}>
-                <Image
-                  source={{ uri: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=150&q=80' }}
-                  style={styles.avatarImage}
-                />
-                <PulsingOnlineDot />
-              </View>
-              <Text style={styles.storyName} numberOfLines={1}>ABHISHRU...</Text>
-            </View>
+            {/* Live Realtime Presence Online Users */}
+            {onlineUsers.map((u, i) => {
+              if (u.username === profile.name) return null;
+              const colors = ['#00b4d8', '#0f4c5c', '#e01e5a', '#4a2810', '#84cc16'];
+              const bg = colors[i % colors.length];
+              return (
+                <View key={u.user_id || i} style={styles.storyItem}>
+                  <View style={[styles.avatarCircle, { backgroundColor: bg }]}>
+                    <Text style={styles.avatarLetter}>{u.username?.[0]?.toUpperCase() || 'A'}</Text>
+                    <PulsingOnlineDot />
+                  </View>
+                  <Text style={styles.storyName} numberOfLines={1}>
+                    {(u.username || 'Athlete').toUpperCase()}
+                  </Text>
+                </View>
+              );
+            })}
           </ScrollView>
         </Animated.View>
 
@@ -668,26 +651,29 @@ export default function ArenaHomeScreen() {
         </View>
 
         <Animated.View entering={FadeInDown.duration(250)} style={styles.dailyCard}>
-          <ScalePressable onPress={() => setShowDailyModal(true)}>
+          <ScalePressable
+            onPress={() => {
+              Haptics.selectionAsync();
+              router.push('/(tabs)/daily');
+            }}
+          >
             <View style={styles.dailyCardHeader}>
               <View>
-                <Text style={styles.dailyTitle}>DAILY CHALLENGES</Text>
+                <Text style={styles.dailyTitle}>TODAY'S DAILY WORKOUT</Text>
                 <Text style={styles.dailySubtitle}>
-                  {dailyRewardClaimed
-                    ? 'Daily Reward Claimed (+250 XP)'
-                    : dailyProgress >= 6
-                    ? 'Tap trophy to claim +250 XP reward! 🏆'
-                    : 'Complete duels to earn rewards'}
+                  {profile.dailyRewardClaimed
+                    ? 'Today’s Workout Completed (+250 XP • +50 Coins)'
+                    : '4-Section Workout • Complete all sections to advance streak'}
                 </Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={24} color="#84cc16" />
             </View>
 
-            {/* Real Interactive Progress Bar */}
+            {/* Real Section Progress Bar */}
             <AnimatedProgressBar
-              current={dailyProgress}
-              total={6}
-              claimed={dailyRewardClaimed}
+              current={profile.dailyProgress ?? 0}
+              total={4}
+              claimed={profile.dailyRewardClaimed ?? false}
             />
           </ScalePressable>
         </Animated.View>

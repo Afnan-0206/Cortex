@@ -101,7 +101,7 @@ export const GradientButton: React.FC<GradientButtonProps> = ({
       style={[styles.container, animatedStyle, style]}
     >
       {/* Outer soft volumetric glow halo */}
-      <View style={[styles.glowHalo, { borderRadius }]} pointerEvents="none" />
+      <View style={[styles.glowHalo, { borderRadius, pointerEvents: 'none' }]} />
       <LinearGradient
         colors={
           disabled
@@ -121,8 +121,7 @@ export const GradientButton: React.FC<GradientButtonProps> = ({
           colors={['rgba(242, 241, 247, 0.25)', 'transparent']}
           start={{ x: 0, y: 0 }}
           end={{ x: 0.5, y: 0.5 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
         />
         <View style={styles.row}>
           {iconPosition === 'left' && icon && (

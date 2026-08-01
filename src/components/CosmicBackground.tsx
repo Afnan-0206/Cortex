@@ -53,7 +53,7 @@ export const CosmicBackground: React.FC<CosmicBackgroundProps> = ({
   }, []);
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+    <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
       {/* Seamless Base Background: #05060F (bgVoid) -> #0B0E1F (bgDeep) */}
       <LinearGradient
         colors={[colors.bgVoid, colors.bgDeep, colors.bgVoid]}

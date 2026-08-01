@@ -2,12 +2,14 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "ignoreDeprecations": "6.0"
+    "paths": {
+      "@/*": ["./*"]
+    }
   },
   "exclude": [
     "node_modules",
-    "components",
-    "lib",
-    "supabase"
+    "supabase/functions",
+    "components/ui/following-pointer.tsx",
+    "components/following-pointer-demo.tsx"
   ]
 }

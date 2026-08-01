@@ -10,6 +10,7 @@ import {
   Share,
   Linking,
   Image,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -24,6 +25,7 @@ import Animated, {
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUserStore } from '../../src/store/userStore';
+import { useSettings } from '../../lib/hooks/useSettings';
 import { executeOptimisticAction } from '../../lib/optimisticManager';
 
 // Reusable Spring Pressable Component
@@ -65,24 +67,23 @@ const ScalePressable: React.FC<ScalePressableProps> = ({
 export default function ProfileScreen() {
   const router = useRouter();
   const profile = useUserStore((state) => state.profile);
+  const logout = useUserStore((state) => state.logout);
+  const { settings, updateSettingField, updateUsername } = useSettings();
 
   // Modal & Toggles State
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [copiedHandle, setCopiedHandle] = useState(false);
-  const [widgetInstalled, setWidgetInstalled] = useState(false);
-  const [pushEnabled, setPushEnabled] = useState(true);
   const [hapticsEnabled, setHapticsEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
+
+  // Edit Username Modal State
+  const [editNameModal, setEditNameModal] = useState(false);
+  const [editNameInput, setEditNameInput] = useState(profile.name || 'User');
 
   const handleCopyHandle = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setCopiedHandle(true);
     setTimeout(() => setCopiedHandle(false), 2000);
-  };
-
-  const handleToggleWidget = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setWidgetInstalled(!widgetInstalled);
   };
 
   const handleAction = (type: string) => {
@@ -96,19 +97,29 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleSaveName = async () => {
+    const clean = editNameInput.trim();
+    if (clean) {
+      await updateUsername(clean);
+    }
+    setEditNameModal(false);
+  };
+
+  const handleSignOut = async () => {
+    await logout();
+    router.replace('/(auth)/login');
+  };
+
+  const currentUsername = profile.name || 'User';
+  const avatarLetter = currentUsername[0]?.toUpperCase() || 'U';
+  const handleName = `@${currentUsername.toLowerCase().replace(/\s+/g, '_')}`;
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── 0. TAGLINE HEADER RIBBON ── */}
-        <Animated.View entering={FadeInDown.duration(250)} style={styles.taglineBar}>
-          <View style={styles.taglineDot} />
-          <Text style={styles.taglineText}>THINK. SOLVE. RISE.</Text>
-          <View style={styles.taglineDot} />
-        </Animated.View>
-
         {/* ── 1. REALISTIC HERO PROFILE CARD ── */}
         <Animated.View entering={FadeInDown.delay(50).duration(300)} style={styles.profileCard}>
           <LinearGradient
@@ -120,30 +131,47 @@ export default function ProfileScreen() {
           <View style={styles.topGlossyRim} />
 
           <View style={styles.profileHeaderRow}>
-            {/* Avatar Circle with Verified Shield */}
-            <View style={styles.avatarWrapper}>
+            {/* Avatar Circle with Edit Icon */}
+            <Pressable
+              style={styles.avatarWrapper}
+              onPress={() => {
+                setEditNameInput(currentUsername);
+                setEditNameModal(true);
+              }}
+            >
               <View style={styles.avatarCircle}>
-                <Text style={styles.avatarLetter}>G</Text>
+                <Text style={styles.avatarLetter}>{avatarLetter}</Text>
               </View>
               <View style={styles.verifiedBadge}>
-                <MaterialCommunityIcons name="shield-check" size={13} color="#ffffff" />
+                <MaterialCommunityIcons name="pencil" size={10} color="#84cc16" />
               </View>
-            </View>
+            </Pressable>
 
             {/* Name, Handle & League */}
             <View style={styles.identityDetails}>
-              <Text style={styles.username}>GHOSTMODE</Text>
-              
+              <Pressable
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                onPress={() => {
+                  setEditNameInput(currentUsername);
+                  setEditNameModal(true);
+                }}
+              >
+                <Text style={styles.username}>{currentUsername.toUpperCase()}</Text>
+                <MaterialCommunityIcons name="pencil-circle" size={18} color="#84cc16" />
+              </Pressable>
+
               <Pressable style={styles.handlePill} onPress={handleCopyHandle}>
                 <Text style={styles.handleText}>
-                  {copiedHandle ? 'COPIED TO CLIPBOARD ✓' : '@affu._123'}
+                  {copiedHandle ? 'COPIED TO CLIPBOARD ✓' : handleName}
                 </Text>
                 {!copiedHandle && (
                   <MaterialCommunityIcons name="content-copy" size={12} color="#6b7280" />
                 )}
               </Pressable>
 
-              <Text style={styles.leagueTag}>Grandmaster Division • #14 Global</Text>
+              <Text style={styles.leagueTag}>
+                {profile.email ? `Account: ${profile.email}` : 'Bronze Division • Rookie Athlete'}
+              </Text>
             </View>
           </View>
 
@@ -151,72 +179,25 @@ export default function ProfileScreen() {
           <View style={styles.statsPillGrid}>
             <View style={styles.statPillItem}>
               <MaterialCommunityIcons name="fire" size={16} color="#f97316" />
-              <Text style={styles.statPillValue}>{profile.streak || 125} STREAK</Text>
+              <Text style={styles.statPillValue}>{profile.streak ?? 0} STREAK</Text>
             </View>
 
             <View style={styles.statPillItem}>
               <MaterialCommunityIcons name="hexagon-outline" size={14} color="#84cc16" />
-              <Text style={styles.statPillValue}>{profile.brainPoints || 1420} XP</Text>
+              <Text style={styles.statPillValue}>{profile.brainPoints ?? 0} XP</Text>
             </View>
 
             <View style={styles.statPillItem}>
               <MaterialCommunityIcons name="crosshairs-gps" size={14} color="#22c55e" />
-              <Text style={styles.statPillValue}>565 PIES</Text>
+              <Text style={styles.statPillValue}>{profile.totalSessionsCompleted ?? 0} SESSIONS</Text>
             </View>
           </View>
         </Animated.View>
 
-        {/* ── 2. LIVE STREAK WIDGET INTERACTIVE CARD ── */}
-        <Animated.View entering={FadeInDown.delay(100).duration(300)} style={styles.widgetCard}>
-          <LinearGradient
-            colors={['#271810', '#1c130d', '#171920']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.topGlossyRim} />
-
-          <View style={styles.widgetLeftGraphic}>
-            <LinearGradient
-              colors={['#f97316', '#ea580c']}
-              style={styles.widgetGraphicBox}
-            >
-              <Text style={styles.widgetMascotText}>🔥 {profile.streak || 125}</Text>
-              <Text style={styles.widgetMascotSub}>You did it!</Text>
-
-              <View style={styles.coolSunglasses}>
-                <View style={styles.lens} />
-                <View style={styles.lens} />
-              </View>
-            </LinearGradient>
-          </View>
-
-          <View style={styles.widgetContent}>
-            <Text style={styles.widgetTitle}>Live Streak Widget</Text>
-            <Text style={styles.widgetSub}>
-              Install Sero on your phone home screen to stay locked on your daily workout.
-            </Text>
-
-            <ScalePressable
-              style={[styles.widgetCtaBtn, widgetInstalled && styles.widgetCtaBtnInstalled]}
-              onPress={handleToggleWidget}
-            >
-              <MaterialCommunityIcons
-                name={widgetInstalled ? 'check-circle' : 'cellphone-dock'}
-                size={14}
-                color={widgetInstalled ? '#22c55e' : '#ffffff'}
-              />
-              <Text style={[styles.widgetCtaText, widgetInstalled && styles.widgetCtaTextInstalled]}>
-                {widgetInstalled ? 'WIDGET INSTALLED ✓' : 'INSTALL WIDGET +'}
-              </Text>
-            </ScalePressable>
-          </View>
-        </Animated.View>
-
-        {/* ── 3. BENTO CONTROL HUBS (REALISTIC MODERN UX) ── */}
+        {/* ── 2. BENTO CONTROL HUBS (MODERN ATHLETIC ARENA UX) ── */}
 
         {/* HUB 1: SOCIAL & SQUAD BENTO */}
-        <Animated.View entering={FadeInUp.delay(150).duration(300)} style={styles.bentoSection}>
+        <Animated.View entering={FadeInUp.delay(100).duration(300)} style={styles.bentoSection}>
           <Text style={styles.bentoSectionTitle}>SQUAD & SOCIAL HUB</Text>
 
           <View style={styles.bentoGridRow}>
@@ -338,18 +319,10 @@ export default function ProfileScreen() {
                 <Text style={styles.controlTitle}>Daily Streak Reminders (8:00 PM)</Text>
               </View>
               <Switch
-                value={pushEnabled}
+                value={settings.notificationsEnabled}
                 onValueChange={(val) => {
-                  executeOptimisticAction({
-                    actionName: 'Daily Streak Reminders',
-                    previousState: pushEnabled,
-                    optimisticState: val,
-                    applyState: setPushEnabled,
-                    serverTask: async () => {
-                      // Simulates async storage/backend settings sync
-                      await new Promise((resolve) => setTimeout(resolve, 300));
-                    },
-                  });
+                  Haptics.selectionAsync();
+                  updateSettingField('notificationsEnabled', val);
                 }}
                 trackColor={{ false: '#20242e', true: '#84cc16' }}
                 thumbColor="#ffffff"
@@ -399,6 +372,32 @@ export default function ProfileScreen() {
                 thumbColor="#ffffff"
               />
             </View>
+
+            <View style={styles.controlDivider} />
+
+            <Pressable
+              style={styles.controlRow}
+              onPress={() => {
+                setEditNameInput(currentUsername);
+                setEditNameModal(true);
+              }}
+            >
+              <View style={styles.controlMeta}>
+                <MaterialCommunityIcons name="account-edit-outline" size={18} color="#84cc16" style={{ marginRight: 10 }} />
+                <Text style={styles.controlTitle}>Edit Player Username</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color="#64748b" />
+            </Pressable>
+
+            <View style={styles.controlDivider} />
+
+            <Pressable style={styles.controlRow} onPress={handleSignOut}>
+              <View style={styles.controlMeta}>
+                <MaterialCommunityIcons name="logout" size={18} color="#ef4444" style={{ marginRight: 10 }} />
+                <Text style={[styles.controlTitle, { color: '#ef4444' }]}>Sign Out Account</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color="#ef4444" />
+            </Pressable>
           </View>
         </Animated.View>
 
@@ -525,6 +524,51 @@ export default function ProfileScreen() {
 
             <ScalePressable style={styles.modalCloseBtn} onPress={() => setActiveModal(null)}>
               <Text style={styles.modalCloseBtnText}>CLOSE</Text>
+            </ScalePressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Edit Username Modal */}
+      <Modal
+        visible={editNameModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditNameModal(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setEditNameModal(false)}>
+          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>Edit Player Username ✏️</Text>
+            <Text style={styles.modalSub}>Update the username shown on your profile and leaderboards:</Text>
+            
+            <TextInput
+              style={{
+                height: 48,
+                backgroundColor: '#12141a',
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: '#84cc16',
+                paddingHorizontal: 14,
+                color: '#ffffff',
+                fontSize: 15,
+                fontWeight: '700',
+                marginBottom: 16,
+              }}
+              value={editNameInput}
+              onChangeText={setEditNameInput}
+              placeholder="Enter new username"
+              placeholderTextColor="#6b7280"
+              autoCapitalize="words"
+              autoCorrect={false}
+              maxLength={20}
+            />
+
+            <ScalePressable style={styles.modalPrimaryBtn} onPress={handleSaveName}>
+              <Text style={styles.modalPrimaryBtnText}>SAVE USERNAME</Text>
+            </ScalePressable>
+
+            <ScalePressable style={styles.modalCloseBtn} onPress={() => setEditNameModal(false)}>
+              <Text style={styles.modalCloseBtnText}>CANCEL</Text>
             </ScalePressable>
           </Pressable>
         </Pressable>

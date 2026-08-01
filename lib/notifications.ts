@@ -46,10 +46,20 @@ export async function sendLocalNotification(title: string, body: string) {
   }
 }
 
+export async function cancelStreakReminders() {
+  try {
+    const Notifications = require('expo-notifications');
+    await Notifications.cancelAllScheduledNotificationsAsync();
+  } catch (e) {
+    console.log('[Streak Reminder Canceled]');
+  }
+}
+
 // Scheduled Daily 8 PM Streak Reminder
 export async function setupStreakReminder(currentStreak: number = 17) {
   try {
     const Notifications = require('expo-notifications');
+    await Notifications.cancelAllScheduledNotificationsAsync();
     await Notifications.scheduleNotificationAsync({
       content: {
         title: "🔥 Don't Break Your Streak!",

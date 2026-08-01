@@ -14,11 +14,11 @@ const COMPRESSION_MIN_BYTES_THRESHOLD = 1024; // 1KB minimum threshold for edge 
 /**
  * Bulk Insert: Executes multi-row batched inserts in chunks within single operations.
  */
-export async function bulkInsert<T extends Record<string, any>>(
+export async function bulkInsert(
   tableName: string,
-  records: T[],
+  records: Record<string, unknown>[],
   chunkSize: number = DEFAULT_BATCH_CHUNK_SIZE
-): Promise<{ success: boolean; insertedCount: number; error?: any }> {
+): Promise<{ success: boolean; insertedCount: number; error?: unknown }> {
   if (!records || records.length === 0) {
     return { success: true, insertedCount: 0 };
   }
@@ -29,7 +29,7 @@ export async function bulkInsert<T extends Record<string, any>>(
   for (let i = 0; i < records.length; i += chunkSize) {
     const chunk = records.slice(i, i + chunkSize);
 
-    const { data, error } = await supabase
+    const { error } = await (supabase as any)
       .from(tableName)
       .insert(chunk);
 
@@ -47,12 +47,12 @@ export async function bulkInsert<T extends Record<string, any>>(
 /**
  * Bulk Upsert / Batch Update: Performs batched multi-row upserts in chunked transactions.
  */
-export async function bulkUpsert<T extends Record<string, any>>(
+export async function bulkUpsert(
   tableName: string,
-  records: T[],
+  records: Record<string, unknown>[],
   onConflictKey?: string,
   chunkSize: number = DEFAULT_BATCH_CHUNK_SIZE
-): Promise<{ success: boolean; updatedCount: number; error?: any }> {
+): Promise<{ success: boolean; updatedCount: number; error?: unknown }> {
   if (!records || records.length === 0) {
     return { success: true, updatedCount: 0 };
   }
@@ -62,7 +62,7 @@ export async function bulkUpsert<T extends Record<string, any>>(
   for (let i = 0; i < records.length; i += chunkSize) {
     const chunk = records.slice(i, i + chunkSize);
 
-    const { data, error } = await supabase
+    const { error } = await (supabase as any)
       .from(tableName)
       .upsert(chunk, onConflictKey ? { onConflict: onConflictKey } : undefined);
 

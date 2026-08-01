@@ -144,7 +144,7 @@ export default function PuzzlesScreen() {
   const completeQuest = useUserStore((state) => state.completeQuest);
   const updateQuestProgress = useUserStore((state) => state.updateQuestProgress);
 
-  const questPoints = profile.questPoints ?? 4;
+  const questPoints = profile.questPoints ?? 0;
   const completedQuests = profile.completedQuests ?? [];
   const questProgressMap = profile.questProgress ?? {};
 

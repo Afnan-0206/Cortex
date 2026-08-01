@@ -41,7 +41,7 @@ export const FloatingXpParticle: React.FC<FloatingXpParticleProps> = ({
   if (!visible) return null;
 
   return (
-    <Animated.View style={[styles.particleContainer, animatedStyle]} pointerEvents="none">
+    <Animated.View style={[styles.particleContainer, animatedStyle, { pointerEvents: 'none' }]}>
       <Text style={styles.xpText}>+{xpAmount} XP</Text>
     </Animated.View>
   );

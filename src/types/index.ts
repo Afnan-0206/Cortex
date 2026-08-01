@@ -7,6 +7,9 @@ export type ChallengeType = 'math' | 'logic' | 'memory';
 
 export interface UserProfile {
   name?: string;
+  email?: string;
+  isLoggedIn?: boolean;
+  hasCustomUsername?: boolean;
   brainPoints: number;
   streak: number;
   longestStreak: number;
@@ -25,6 +28,8 @@ export interface UserProfile {
   questPoints: number;      // 0-30 monthly expedition quest points
   completedQuests: string[]; // IDs of completed quests today
   questProgress: Record<string, number>; // per-quest completed questions count (0-20)
+  first_game_completed?: boolean;
+  coins?: number;
 }
 
 export interface SessionState {

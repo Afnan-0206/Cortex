@@ -38,7 +38,9 @@
         {
           "contactsPermission": "Cortex uses your contacts to challenge friends to math duels."
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-status-bar"
     ]
   }
 }

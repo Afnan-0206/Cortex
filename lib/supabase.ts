@@ -1,69 +1,37 @@
+import 'react-native-url-polyfill/auto';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://your-supabase-project.supabase.co';
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'your-anon-key-placeholder';
+const supabaseUrl  = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
-// Client-side Compression & Header configuration for API transport negotiation
-export const DEFAULT_FETCH_HEADERS = {
-  'Accept-Encoding': 'gzip, deflate, br',
-  'Content-Type': 'application/json',
-};
+/**
+ * Singleton guard — prevents "Multiple GoTrueClient instances" warning.
+ *
+ * On web, Metro's hot-reload can re-execute module code multiple times within
+ * the same browser context. We store a single instance on `globalThis` so every
+ * import always resolves to the same object.
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var __supabaseClient: SupabaseClient | undefined;
+}
 
-// Flexible Supabase client interface wrapper supporting single & multi-row bulk operations
-export const supabase: any = {
-  auth: {
-    getSession: async () => ({ data: { session: null }, error: null }),
-    signInWithPassword: async (credentials: any) => ({ data: { session: null }, error: null }),
-    signUp: async (credentials: any) => ({ data: { session: null }, error: null }),
-    signOut: async () => ({ error: null }),
-  },
-  from: (table: string) => ({
-    select: (query?: string) => ({
-      eq: (col: string, val: any) => ({
-        single: async () => ({ data: null, error: null }),
-      }),
-      neq: (col: string, val: any) => ({
-        gte: (col: string, val: any) => ({
-          lte: (col: string, val: any) => ({
-            order: (col: string, opts: any) => ({
-              limit: async (num: number) => ({ data: [], error: null }),
-            }),
-          }),
-        }),
-      }),
-      limit: async (num: number) => ({ data: [], error: null }),
-    }),
-    // Supports multi-row array bulk inserts in a single request
-    insert: async (data: any) => {
-      const records = Array.isArray(data) ? data : [data];
-      return { data: records, error: null, count: records.length };
+function createSupabase() {
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      storage: AsyncStorage,
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: Platform.OS === 'web',
+      flowType: 'pkce',
     },
-    // Supports multi-row array bulk updates/upserts in a single request
-    update: async (data: any) => {
-      const records = Array.isArray(data) ? data : [data];
-      return { data: records, error: null, count: records.length };
+    global: {
+      headers: { 'X-Client-Info': 'cortex-mobile/1.0.0' },
     },
-    upsert: async (data: any, options?: any) => {
-      const records = Array.isArray(data) ? data : [data];
-      return { data: records, error: null, count: records.length };
-    },
-    delete: () => ({
-      in: async (col: string, vals: any[]) => ({ data: null, error: null, count: vals.length }),
-    }),
-  }),
-  channel: (name: string, config?: any) => {
-    const ch: any = {
-      on: (event: string, filter: any, callback?: any) => ch,
-      subscribe: (callback?: any) => {
-        if (callback) callback('SUBSCRIBED');
-        return ch;
-      },
-      presenceState: () => ({}),
-      track: async (payload: any) => {},
-      untrack: async () => {},
-      unsubscribe: () => {},
-    };
-    return ch;
-  },
-  removeChannel: (channel: any) => {},
-};
+  });
+}
+
+export const supabase: SupabaseClient =
+  globalThis.__supabaseClient ?? (globalThis.__supabaseClient = createSupabase());

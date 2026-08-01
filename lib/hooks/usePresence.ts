@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { AppState, AppStateStatus } from 'react-native';
+import { supabase } from '../supabase';
 import { useAuthStore } from '../../src/store/authStore';
+import { useUserStore } from '../../src/store/userStore';
 
 export interface PresencePayload {
   user_id: string;
@@ -10,16 +12,15 @@ export interface PresencePayload {
 }
 
 export function usePresence() {
-  const { user, profile } = useAuthStore();
-  const [onlineUsers, setOnlineUsers] = useState<PresencePayload[]>([
-    { user_id: '1', username: 'Riya', elo_rating: 1452, online_at: new Date().toISOString() },
-    { user_id: '2', username: 'Marcus', elo_rating: 1510, online_at: new Date().toISOString() },
-    { user_id: '3', username: 'Siddharth', elo_rating: 1390, online_at: new Date().toISOString() },
-    { user_id: '4', username: 'Elena', elo_rating: 1620, online_at: new Date().toISOString() },
-  ]);
+  const { user } = useAuthStore();
+  const userProfile = useUserStore((s) => s.profile);
+  const [onlineUsers, setOnlineUsers] = useState<PresencePayload[]>([]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setOnlineUsers([]);
+      return;
+    }
 
     const channel = supabase.channel('presence:arena', {
       config: {
@@ -32,27 +33,41 @@ export function usePresence() {
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
       const list = Object.values(state).flat() as any[];
-      if (list.length > 0) {
-        setOnlineUsers(list);
-      }
+      setOnlineUsers(list);
     });
+
+    const trackUser = async () => {
+      await channel.track({
+        user_id: user.id,
+        username: userProfile.name || user.email?.split('@')[0] || 'Athlete',
+        elo_rating: userProfile.brainPoints || 1200,
+        online_at: new Date().toISOString(),
+      });
+    };
 
     channel.subscribe(async (status: string) => {
       if (status === 'SUBSCRIBED') {
-        await channel.track({
-          user_id: user.id || 'user_local',
-          username: profile?.name || 'Afnan',
-          elo_rating: profile?.brainPoints || 1420,
-          online_at: new Date().toISOString(),
-        });
+        await trackUser();
       }
     });
 
+    // Handle AppState (Pause presence when backgrounded, resume when active)
+    const handleAppStateChange = async (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active') {
+        await trackUser();
+      } else if (nextAppState === 'background' || nextAppState === 'inactive') {
+        await channel.untrack();
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
     return () => {
+      subscription.remove();
       channel.untrack();
       supabase.removeChannel(channel);
     };
-  }, [user, profile]);
+  }, [user, userProfile.name, userProfile.brainPoints]);
 
   return { onlineUsers };
 }

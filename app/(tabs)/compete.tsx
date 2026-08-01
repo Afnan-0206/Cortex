@@ -6,6 +6,7 @@ import {
   ScrollView,
   Pressable,
   Modal,
+  GestureResponderEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -17,6 +18,8 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from 'react-native-reanimated';
+
+import { useUserStore } from '../../src/store/userStore';
 
 interface LeagueTier {
   id: string;
@@ -138,8 +141,11 @@ export default function CompeteScreen() {
     setIsNotified(!isNotified);
   };
 
+  const profile = useUserStore((state) => state.profile);
+  const rating = profile.brainPoints ?? 0;
+
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView edges={['top']} style={styles.safeArea}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -175,10 +181,10 @@ export default function CompeteScreen() {
             <View style={styles.leagueHeaderRow}>
               <View>
                 <Text style={styles.currentCaption}>ACTIVE DIVISION</Text>
-                <Text style={styles.currentName}>Gold Division (1420 Rating)</Text>
+                <Text style={styles.currentName}>{rating >= 1500 ? 'Gold' : rating >= 1000 ? 'Silver' : 'Bronze'} Division ({rating} Rating)</Text>
               </View>
               <View style={styles.rankBadge}>
-                <Text style={styles.rankBadgeText}>#14 Global</Text>
+                <Text style={styles.rankBadgeText}>{rating > 0 ? '#14 Global' : 'Unranked'}</Text>
               </View>
             </View>
 
@@ -273,7 +279,7 @@ export default function CompeteScreen() {
           style={styles.modalOverlay}
           onPress={() => setShowOpeningSoonModal(false)}
         >
-          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={styles.modalContent} onPress={(e: GestureResponderEvent) => e.stopPropagation()}>
             <View style={styles.modalHeaderRow}>
               <Text style={styles.modalHeaderTitle}>Tournament Registration</Text>
               <Pressable onPress={() => setShowOpeningSoonModal(false)}>

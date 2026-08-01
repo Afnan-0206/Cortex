@@ -4,6 +4,7 @@ import { bulkInsert } from '../../lib/batchUtils';
 import { CircuitBreaker } from '../../lib/circuitBreaker';
 import { analytics } from '../../lib/analytics';
 import { notifyMatchFound } from '../../lib/notifications';
+import { useUserStore } from './userStore';
 import { MathQuestion } from '../types';
 
 export interface BattlePlayer {
@@ -166,6 +167,9 @@ export const useBattleStore = create<BattleStoreState>((set, get) => ({
       notifyMatchFound();
 
       const freshQuestions = generateTrickyQuestions(30);
+      const userProfile = useUserStore.getState().profile;
+      const userName = userProfile.name || 'Athlete';
+      const userRating = userProfile.brainPoints || rating || 1200;
 
       set({
         matchId: res.matchId,
@@ -176,8 +180,8 @@ export const useBattleStore = create<BattleStoreState>((set, get) => ({
         earnedXP: 0,
         opponentSolveTimer: 2,
         questions: freshQuestions,
-        user: { id: userId || 'user_local', name: 'Afnan', rating: rating || 1420, score: 0, progress: 0, streak: 0 },
-        opponent: { id: 'opp_riya', name: 'Riya', rating: 1452, score: 0, progress: 0, streak: 0 },
+        user: { id: userId || 'user_local', name: userName, rating: userRating, score: 0, progress: 0, streak: 0 },
+        opponent: { id: 'opp_rival', name: 'Rival Athlete', rating: userRating + 25, score: 0, progress: 0, streak: 0 },
       });
 
       get().subscribeToMatch(res.matchId);
@@ -301,13 +305,19 @@ export const useBattleStore = create<BattleStoreState>((set, get) => ({
     }
 
     if (state.matchId) {
-      supabase.from('answers').insert({
-        match_id: state.matchId,
-        user_id: state.user.id,
-        question_order: state.currentQuestionIndex + 1,
-        answer: selectedAnswer.toString(),
-        correct: isCorrect,
-      }).catch(() => {});
+      void (async () => {
+        try {
+          await supabase.from('answers').insert({
+            match_id: state.matchId,
+            user_id: state.user.id,
+            question_order: state.currentQuestionIndex + 1,
+            answer: selectedAnswer.toString(),
+            correct: isCorrect,
+          });
+        } catch {
+          // silent fire-and-forget
+        }
+      })();
     }
 
     set({

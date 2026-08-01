@@ -20,23 +20,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   session: null,
   profile: {
-    name: 'Afnan',
-    brainPoints: 1420,
-    streak: 17,
-    longestStreak: 17,
-    lastCompletedDate: new Date().toISOString().split('T')[0],
-    totalSessionsCompleted: 248,
-    mathSpeed: 85,
-    mathAccuracy: 0.92,
-    logicScore: 92,
-    logicAccuracy: 0.90,
-    memorySpan: 7,
-    consistency: 94,
-    cortexScore: 850,
-    perfectRuns: 14,
+    name: 'User',
+    email: '',
+    isLoggedIn: false,
+    hasCustomUsername: false,
+    brainPoints: 0,
+    streak: 0,
+    longestStreak: 0,
+    lastCompletedDate: null,
+    totalSessionsCompleted: 0,
+    mathSpeed: 0,
+    mathAccuracy: 0,
+    logicScore: 0,
+    logicAccuracy: 0,
+    memorySpan: 0,
+    consistency: 0,
+    cortexScore: 0,
+    perfectRuns: 0,
     dailyProgress: 0,
     dailyRewardClaimed: false,
-    questPoints: 4,
+    questPoints: 0,
     completedQuests: [],
     questProgress: {},
   },
@@ -121,8 +124,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signOut: async () => {
-    await supabase.auth.signOut();
-    set({ user: null, session: null });
+    try {
+      await supabase.removeAllChannels();
+      await supabase.auth.signOut();
+    } catch {
+      // silent fallback
+    }
+    set({ user: null, session: null, profile: null });
   },
 
   setThemeMode: (mode) => set({ themeMode: mode }),

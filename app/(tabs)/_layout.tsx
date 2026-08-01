@@ -115,7 +115,18 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* 5. MORE */}
+      {/* 5. DAILY */}
+      <Tabs.Screen
+        name="daily"
+        options={{
+          title: 'Daily Workout',
+          tabBarIcon: ({ focused }) => (
+            <TabIcon name="calendar-check" label="DAILY" focused={focused} />
+          ),
+        }}
+      />
+
+      {/* 6. MORE */}
       <Tabs.Screen
         name="profile"
         options={{

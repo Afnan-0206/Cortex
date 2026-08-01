@@ -70,8 +70,7 @@ export const GlassCard: React.FC<GlassCardProps> = ({
           colors={['rgba(242, 241, 247, 0.08)', 'rgba(242, 241, 247, 0.01)', 'transparent']}
           start={{ x: 0, y: 0 }}
           end={{ x: 0.6, y: 0.6 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
         />
         {children}
       </LinearGradient>

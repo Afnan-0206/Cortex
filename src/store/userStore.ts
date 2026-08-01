@@ -8,27 +8,31 @@ import {
   shouldIncreaseStreak,
   calculateConsistency,
 } from '../logic/scoring';
+import { supabase } from '../../lib/supabase';
 
 const ASYNC_STORAGE_KEY = 'cortex_profile_v1';
 
 export const DEFAULT_PROFILE: UserProfile = {
-  name: 'Afnan',
-  brainPoints: 1420,
-  streak: 17,
-  longestStreak: 17,
-  lastCompletedDate: new Date().toISOString().split('T')[0],
-  totalSessionsCompleted: 248,
-  mathSpeed: 85,
-  mathAccuracy: 0.92,
-  logicScore: 92,
-  logicAccuracy: 0.9,
-  memorySpan: 7,
-  consistency: 94,
-  cortexScore: 850,
-  perfectRuns: 14,
-  dailyProgress: 3,
+  name: 'User',
+  email: '',
+  isLoggedIn: false,
+  hasCustomUsername: false,
+  brainPoints: 0,
+  streak: 0,
+  longestStreak: 0,
+  lastCompletedDate: '',
+  totalSessionsCompleted: 0,
+  mathSpeed: 0,
+  mathAccuracy: 0,
+  logicScore: 0,
+  logicAccuracy: 0,
+  memorySpan: 0,
+  consistency: 0,
+  cortexScore: 0,
+  perfectRuns: 0,
+  dailyProgress: 0,
   dailyRewardClaimed: false,
-  questPoints: 4,
+  questPoints: 0,
   completedQuests: [],
   questProgress: {},
 };
@@ -61,6 +65,9 @@ interface UserStore {
   completeQuest: (questId: string) => Promise<void>;
   updateQuestProgress: (questId: string, progress: number) => Promise<void>;
   incrementStreak: () => Promise<void>;
+  updateName: (newName: string) => Promise<void>;
+  setLoggedInState: (isLoggedIn: boolean, email?: string, name?: string) => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 export const useUserStore = create<UserStore>((set, get) => ({
@@ -70,34 +77,103 @@ export const useUserStore = create<UserStore>((set, get) => ({
 
   loadProfile: async () => {
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const jsonStr = await AsyncStorage.getItem(ASYNC_STORAGE_KEY);
       const todayStr = new Date().toISOString().split('T')[0];
 
+      const isAuthenticated = !!session;
+
+      let dbProfileData: any = null;
+      let dbDailyProgress: any = null;
+      if (session?.user) {
+        const { data: dbProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .maybeSingle();
+        dbProfileData = dbProfile;
+
+        const { data: dbDaily } = await supabase
+          .from('user_daily_progress')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .eq('challenge_date', todayStr)
+          .maybeSingle();
+        dbDailyProgress = dbDaily;
+      }
+
+      const isTodayDone = dbDailyProgress?.is_completed || dbProfileData?.last_daily_completed_date === todayStr;
+      const todayProgress = isTodayDone ? 4 : (dbDailyProgress ? (dbDailyProgress.completed_sections ?? 0) : 0);
+
       if (jsonStr) {
         const parsed: UserProfile = JSON.parse(jsonStr);
-        let dailyProgress = parsed.dailyProgress ?? 3;
-        let dailyRewardClaimed = parsed.dailyRewardClaimed ?? false;
+
+        // Purge legacy mock data if present
+        if (parsed.totalSessionsCompleted === 248 || parsed.brainPoints === 1420 || parsed.streak === 17) {
+          await AsyncStorage.removeItem(ASYNC_STORAGE_KEY);
+          set({
+            profile: {
+              ...DEFAULT_PROFILE,
+              isLoggedIn: isAuthenticated,
+              name: dbProfileData?.username || 'Athlete',
+              brainPoints: dbProfileData?.xp ?? dbProfileData?.rating ?? 0,
+              streak: dbProfileData?.streak ?? 0,
+              longestStreak: dbProfileData?.best_streak ?? 0,
+              coins: dbProfileData?.coins ?? 0,
+              dailyProgress: todayProgress,
+              dailyRewardClaimed: isTodayDone,
+              first_game_completed: dbProfileData?.first_game_completed ?? false,
+              lastCompletedDate: isTodayDone ? todayStr : (dbProfileData?.last_daily_completed_date || ''),
+            },
+            isLoading: false,
+          });
+          return;
+        }
+
+        let dailyProgress = isTodayDone ? 4 : (dbDailyProgress ? todayProgress : (parsed.lastCompletedDate === todayStr ? (parsed.dailyProgress ?? 0) : 0));
+        let dailyRewardClaimed = isTodayDone ? true : (dbDailyProgress ? isTodayDone : (parsed.lastCompletedDate === todayStr ? (parsed.dailyRewardClaimed ?? false) : false));
         let completedQuests = parsed.completedQuests ?? [];
 
-        // Reset daily challenge if it's a new day
-        if (parsed.lastCompletedDate && parsed.lastCompletedDate !== todayStr) {
+        if (parsed.lastCompletedDate && parsed.lastCompletedDate !== todayStr && !isTodayDone && !dbDailyProgress) {
           dailyProgress = 0;
           dailyRewardClaimed = false;
           completedQuests = [];
         }
 
-        set({
-          profile: {
-            ...DEFAULT_PROFILE,
-            ...parsed,
-            dailyProgress,
-            dailyRewardClaimed,
-            completedQuests,
-          },
-          isLoading: false,
-        });
+        const mergedProfile: UserProfile = {
+          ...DEFAULT_PROFILE,
+          ...parsed,
+          isLoggedIn: isAuthenticated,
+          name: dbProfileData?.username || parsed.name || 'Athlete',
+          brainPoints: dbProfileData?.xp ?? dbProfileData?.rating ?? parsed.brainPoints ?? 0,
+          streak: dbProfileData?.streak ?? parsed.streak ?? 0,
+          longestStreak: dbProfileData?.best_streak ?? parsed.longestStreak ?? 0,
+          coins: dbProfileData?.coins ?? parsed.coins ?? 0,
+          dailyProgress,
+          dailyRewardClaimed,
+          completedQuests,
+          first_game_completed: dbProfileData?.first_game_completed ?? parsed.first_game_completed ?? false,
+          lastCompletedDate: isTodayDone ? todayStr : (dbProfileData?.last_daily_completed_date || parsed.lastCompletedDate || ''),
+        };
+
+        set({ profile: mergedProfile, isLoading: false });
+        AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(mergedProfile)).catch(() => {});
       } else {
-        set({ profile: DEFAULT_PROFILE, isLoading: false });
+        const mergedProfile: UserProfile = {
+          ...DEFAULT_PROFILE,
+          isLoggedIn: isAuthenticated,
+          name: dbProfileData?.username || 'Athlete',
+          brainPoints: dbProfileData?.xp ?? dbProfileData?.rating ?? 0,
+          streak: dbProfileData?.streak ?? 0,
+          longestStreak: dbProfileData?.best_streak ?? 0,
+          coins: dbProfileData?.coins ?? 0,
+          dailyProgress: todayProgress,
+          dailyRewardClaimed: isTodayDone,
+          first_game_completed: dbProfileData?.first_game_completed ?? false,
+          lastCompletedDate: isTodayDone ? todayStr : (dbProfileData?.last_daily_completed_date || ''),
+        };
+        set({ profile: mergedProfile, isLoading: false });
+        AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(mergedProfile)).catch(() => {});
       }
     } catch {
       set({ profile: DEFAULT_PROFILE, isLoading: false });
@@ -267,6 +343,18 @@ export const useUserStore = create<UserStore>((set, get) => ({
 
     try {
       await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(draftProfile));
+      const { data: { session: currentAuthSession } } = await supabase.auth.getSession();
+      if (currentAuthSession?.user) {
+        await supabase
+          .from('profiles')
+          .update({
+            rating: draftProfile.brainPoints,
+            xp: draftProfile.brainPoints,
+            streak: draftProfile.streak,
+            best_streak: draftProfile.longestStreak,
+          })
+          .eq('id', currentAuthSession.user.id);
+      }
     } catch {
       // silent
     }
@@ -303,7 +391,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     const { profile } = get();
     const todayStr = new Date().toISOString().split('T')[0];
     const currentProgress = profile.dailyProgress ?? 0;
-    const nextProgress = Math.min(6, currentProgress + amount);
+    const nextProgress = Math.min(4, currentProgress + amount);
 
     const updatedProfile: UserProfile = {
       ...profile,
@@ -417,6 +505,63 @@ export const useUserStore = create<UserStore>((set, get) => ({
     set({ profile: updatedProfile });
     try {
       await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile));
+    } catch {
+      // silent fallback
+    }
+  },
+
+  updateName: async (newName: string) => {
+    const { profile } = get();
+    const cleanName = newName.trim();
+    if (!cleanName) return;
+
+    const updatedProfile: UserProfile = {
+      ...profile,
+      name: cleanName,
+      hasCustomUsername: true,
+    };
+
+    set({ profile: updatedProfile });
+    try {
+      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile));
+    } catch {
+      // silent fallback
+    }
+  },
+
+  setLoggedInState: async (isLoggedIn: boolean, email?: string, name?: string) => {
+    const { profile } = get();
+    const updatedProfile: UserProfile = {
+      ...profile,
+      isLoggedIn,
+      email: email || profile.email || '',
+      name: name || profile.name || 'Afnan',
+    };
+
+    set({ profile: updatedProfile });
+    try {
+      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile));
+    } catch {
+      // silent fallback
+    }
+  },
+
+  logout: async () => {
+    try {
+      await supabase.removeAllChannels();
+      await supabase.auth.signOut();
+    } catch {
+      // silent fallback
+    }
+    const { profile } = get();
+    const updatedProfile: UserProfile = {
+      ...DEFAULT_PROFILE,
+      isLoggedIn: false,
+      email: '',
+    };
+    set({ profile: updatedProfile, session: null });
+    try {
+      await AsyncStorage.removeItem(ASYNC_STORAGE_KEY);
     } catch {
       // silent fallback
     }

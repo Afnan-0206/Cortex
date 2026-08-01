@@ -10,7 +10,18 @@ export type AnalyticsEvent =
   | 'match_rating_delta'
   | 'post_match_insight_viewed'
   | 'division_promoted'
-  | 'streak_milestone_claimed';
+  | 'streak_milestone_claimed'
+  | 'first_game_guide_started'
+  | 'first_game_guide_completed'
+  | 'first_game_reward_claimed'
+  | 'first_game_guide_skipped'
+  | 'daily_challenge_opened'
+  | 'daily_challenge_started'
+  | 'daily_challenge_section_completed'
+  | 'daily_challenge_completed'
+  | 'daily_challenge_abandoned'
+  | 'daily_streak_incremented'
+  | 'daily_reward_claimed';
 
 class AnalyticsTracker {
   track(event: AnalyticsEvent, properties?: Record<string, any>) {

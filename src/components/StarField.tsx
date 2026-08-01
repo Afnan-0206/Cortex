@@ -77,7 +77,7 @@ export const StarField: React.FC<StarFieldProps> = ({
   }, [count, maxHeight]);
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+    <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
       {stars.map((s, i) => (
         <StarDot key={i} {...s} />
       ))}
