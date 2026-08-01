@@ -184,7 +184,9 @@ export const useDailyChallengeStore = create<DailyChallengeState>((set, get) => 
     const generatedSections = generatePredefinedDailySet(todayStr);
 
     const userProfile = useUserStore.getState().profile;
-    const isProfileTodayDone = userProfile.dailyRewardClaimed || userProfile.dailyProgress === 4 || userProfile.lastCompletedDate === todayStr;
+    const isProfileTodayDone =
+      userProfile.lastCompletedDate === todayStr &&
+      (userProfile.dailyRewardClaimed || userProfile.dailyProgress === 4);
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
