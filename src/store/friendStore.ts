@@ -336,8 +336,6 @@ export const useFriendStore = create<FriendStore>((set, get) => ({
   },
 
   subscribeRealtime: () => {
-    const { data: { session } } = supabase.auth.getSession() as any;
-
     const channel = supabase
       .channel('friend-system-realtime')
       .on(
