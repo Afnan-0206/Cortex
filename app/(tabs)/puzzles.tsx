@@ -65,6 +65,7 @@ interface QuestItem {
 // Reusable Spring Pressable Component
 interface ScalePressableProps {
   onPress: () => void;
+  disabled?: boolean;
   style?: any;
   containerStyle?: any;
   children: React.ReactNode;
@@ -72,6 +73,7 @@ interface ScalePressableProps {
 
 const ScalePressable: React.FC<ScalePressableProps> = ({
   onPress,
+  disabled,
   style,
   containerStyle,
   children,
@@ -84,12 +86,13 @@ const ScalePressable: React.FC<ScalePressableProps> = ({
 
   return (
     <Pressable
+      disabled={disabled}
       style={containerStyle}
       onPressIn={() => {
-        scale.value = withSpring(0.96, { damping: 14, stiffness: 220 });
+        if (!disabled) scale.value = withSpring(0.96, { damping: 14, stiffness: 220 });
       }}
       onPressOut={() => {
-        scale.value = withSpring(1.0, { damping: 12, stiffness: 180 });
+        if (!disabled) scale.value = withSpring(1.0, { damping: 12, stiffness: 180 });
       }}
       onPress={onPress}
     >
@@ -170,6 +173,13 @@ export default function PuzzlesScreen() {
   const [memoryPhase, setMemoryPhase] = useState<'observe' | 'recall'>('observe');
   const [userSequence, setUserSequence] = useState<number[]>([]);
 
+  // Answer Feedback States
+  const [selectedOption, setSelectedOption] = useState<any>(null);
+  const [feedbackState, setFeedbackState] = useState<'correct' | 'wrong' | null>(null);
+  const [correctCount, setCorrectCount] = useState<number>(0);
+  const [wrongCount, setWrongCount] = useState<number>(0);
+  const [correctAnswerVal, setCorrectAnswerVal] = useState<any>(null);
+
   // Generated Sets for All Spec Games
   const [mathSet, setMathSet] = useState<GeneratedMathQuestion[]>([]);
   const [logicSet, setLogicSet] = useState<GeneratedLogicQuestion[]>([]);
@@ -238,15 +248,15 @@ export default function PuzzlesScreen() {
       name: 'Math Maze',
       subtitle: 'Sequential Path Door Operations',
       category: 'Math',
-      tag: 'Pathing',
-      iconName: 'compass-outline',
-      iconColor: '#22c55e',
+      tag: 'Reaction',
+      iconName: 'flash-outline',
+      iconColor: '#38bdf8',
       totalQuestions: 5,
     },
     {
       id: 'q6',
       name: 'Mind Snap Duels',
-      subtitle: 'Visual Symbol Recall & Retention',
+      subtitle: 'Rapid Visual Memory & Symbol Matching',
       category: 'Memory',
       tag: 'Visual',
       iconName: 'eye-outline',
@@ -307,6 +317,10 @@ export default function PuzzlesScreen() {
     setActiveQuestGame(quest);
     setGameStepIndex(0);
     setGameScore(0);
+    setCorrectCount(0);
+    setWrongCount(0);
+    setSelectedOption(null);
+    setFeedbackState(null);
     setGameDone(false);
     setUserSequence([]);
 
@@ -354,16 +368,33 @@ export default function PuzzlesScreen() {
     }
   };
 
-  const handleGenericAnswer = async (isCorrect: boolean, totalQuestions: number = 10) => {
-    const nextScore = gameScore + (isCorrect ? 1 : 0);
+  const handleGenericAnswer = async (
+    isCorrect: boolean,
+    targetCorrectVal: any,
+    chosenVal: any,
+    totalQuestions: number = 10
+  ) => {
+    if (feedbackState !== null) return;
+
+    setSelectedOption(chosenVal);
+    setCorrectAnswerVal(targetCorrectVal);
+
     if (isCorrect) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      setGameScore(nextScore);
+      setFeedbackState('correct');
+      setCorrectCount((c) => c + 1);
+      setGameScore((s) => s + 1);
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      setFeedbackState('wrong');
+      setWrongCount((w) => w + 1);
     }
 
-    await advanceOrFinishSet(nextScore, totalQuestions);
+    setTimeout(async () => {
+      setSelectedOption(null);
+      setFeedbackState(null);
+      await advanceOrFinishSet(gameScore + (isCorrect ? 1 : 0), totalQuestions);
+    }, 800);
   };
 
   return (
@@ -524,17 +555,66 @@ export default function PuzzlesScreen() {
                       <View style={styles.expressionBox}>
                         <Text style={styles.expressionText}>{mathSet[gameStepIndex]?.q}</Text>
                       </View>
+
+                      {/* Inline Answer Feedback Banner */}
+                      {feedbackState !== null && (
+                        <Animated.View entering={FadeInDown.duration(200)} style={[styles.feedbackBanner, feedbackState === 'correct' ? styles.feedbackBannerCorrect : styles.feedbackBannerWrong]}>
+                          <MaterialCommunityIcons
+                            name={feedbackState === 'correct' ? 'check-circle' : 'close-circle'}
+                            size={18}
+                            color={feedbackState === 'correct' ? '#4ade80' : '#f87171'}
+                          />
+                          <Text style={[styles.feedbackBannerText, feedbackState === 'correct' ? styles.feedbackTextCorrect : styles.feedbackTextWrong]}>
+                            {feedbackState === 'correct'
+                              ? '✓ Correct! +10 XP'
+                              : `✕ Almost — correct answer was ${correctAnswerVal}`}
+                          </Text>
+                        </Animated.View>
+                      )}
+
                       <View style={styles.optionsGrid}>
-                        {mathSet[gameStepIndex]?.options.map((opt, idx) => (
-                          <ScalePressable
-                            key={idx}
-                            containerStyle={styles.optionBtnContainer}
-                            style={styles.optionBtn}
-                            onPress={() => handleGenericAnswer(opt === mathSet[gameStepIndex]?.answer, 20)}
-                          >
-                            <Text style={styles.optionBtnText}>{opt}</Text>
-                          </ScalePressable>
-                        ))}
+                        {mathSet[gameStepIndex]?.options.map((opt, idx) => {
+                          const isSelected = selectedOption === opt;
+                          const targetAns = mathSet[gameStepIndex]?.answer;
+                          const isCorrectTarget = Number(opt) === Number(targetAns);
+                          const isSelectedCorrect = feedbackState === 'correct' && isSelected;
+                          const isSelectedWrong = feedbackState === 'wrong' && isSelected;
+                          const isTargetHighlight = feedbackState === 'wrong' && isCorrectTarget;
+
+                          return (
+                            <ScalePressable
+                              key={idx}
+                              disabled={feedbackState !== null}
+                              containerStyle={styles.optionBtnContainer}
+                              style={[
+                                styles.optionBtn,
+                                isSelectedCorrect && styles.optionBtnCorrect,
+                                isSelectedWrong && styles.optionBtnWrong,
+                                isTargetHighlight && styles.optionBtnTargetHighlight,
+                              ]}
+                              onPress={() => handleGenericAnswer(opt === targetAns, targetAns, opt, 20)}
+                            >
+                              <View style={styles.optionContentRow}>
+                                <Text
+                                  style={[
+                                    styles.optionBtnText,
+                                    (isSelectedCorrect || isTargetHighlight) && styles.optionTextCorrect,
+                                    isSelectedWrong && styles.optionTextWrong,
+                                  ]}
+                                >
+                                  {opt}
+                                </Text>
+                                {isSelectedCorrect ? (
+                                  <MaterialCommunityIcons name="check-circle" size={18} color="#4ade80" />
+                                ) : isSelectedWrong ? (
+                                  <MaterialCommunityIcons name="close-circle" size={18} color="#f87171" />
+                                ) : isTargetHighlight ? (
+                                  <MaterialCommunityIcons name="check" size={18} color="#4ade80" />
+                                ) : null}
+                              </View>
+                            </ScalePressable>
+                          );
+                        })}
                       </View>
                     </>
                   )}
@@ -564,17 +644,66 @@ export default function PuzzlesScreen() {
                           </View>
                         ))}
                       </View>
+
+                      {/* Inline Answer Feedback Banner */}
+                      {feedbackState !== null && (
+                        <Animated.View entering={FadeInDown.duration(200)} style={[styles.feedbackBanner, feedbackState === 'correct' ? styles.feedbackBannerCorrect : styles.feedbackBannerWrong]}>
+                          <MaterialCommunityIcons
+                            name={feedbackState === 'correct' ? 'check-circle' : 'close-circle'}
+                            size={18}
+                            color={feedbackState === 'correct' ? '#4ade80' : '#f87171'}
+                          />
+                          <Text style={[styles.feedbackBannerText, feedbackState === 'correct' ? styles.feedbackTextCorrect : styles.feedbackTextWrong]}>
+                            {feedbackState === 'correct'
+                              ? '✓ Correct! +10 XP'
+                              : `✕ Almost — correct answer was ${correctAnswerVal}`}
+                          </Text>
+                        </Animated.View>
+                      )}
+
                       <View style={styles.optionsGrid}>
-                        {sudokuSet[gameStepIndex]?.options.map((opt, idx) => (
-                          <ScalePressable
-                            key={idx}
-                            containerStyle={styles.optionBtnContainer}
-                            style={styles.optionBtn}
-                            onPress={() => handleGenericAnswer(opt === sudokuSet[gameStepIndex]?.missingCell.answer, 10)}
-                          >
-                            <Text style={styles.optionBtnText}>{opt}</Text>
-                          </ScalePressable>
-                        ))}
+                        {sudokuSet[gameStepIndex]?.options.map((opt, idx) => {
+                          const isSelected = selectedOption === opt;
+                          const targetAns = sudokuSet[gameStepIndex]?.missingCell.answer;
+                          const isCorrectTarget = Number(opt) === Number(targetAns);
+                          const isSelectedCorrect = feedbackState === 'correct' && isSelected;
+                          const isSelectedWrong = feedbackState === 'wrong' && isSelected;
+                          const isTargetHighlight = feedbackState === 'wrong' && isCorrectTarget;
+
+                          return (
+                            <ScalePressable
+                              key={idx}
+                              disabled={feedbackState !== null}
+                              containerStyle={styles.optionBtnContainer}
+                              style={[
+                                styles.optionBtn,
+                                isSelectedCorrect && styles.optionBtnCorrect,
+                                isSelectedWrong && styles.optionBtnWrong,
+                                isTargetHighlight && styles.optionBtnTargetHighlight,
+                              ]}
+                              onPress={() => handleGenericAnswer(opt === targetAns, targetAns, opt, 10)}
+                            >
+                              <View style={styles.optionContentRow}>
+                                <Text
+                                  style={[
+                                    styles.optionBtnText,
+                                    (isSelectedCorrect || isTargetHighlight) && styles.optionTextCorrect,
+                                    isSelectedWrong && styles.optionTextWrong,
+                                  ]}
+                                >
+                                  {opt}
+                                </Text>
+                                {isSelectedCorrect ? (
+                                  <MaterialCommunityIcons name="check-circle" size={18} color="#4ade80" />
+                                ) : isSelectedWrong ? (
+                                  <MaterialCommunityIcons name="close-circle" size={18} color="#f87171" />
+                                ) : isTargetHighlight ? (
+                                  <MaterialCommunityIcons name="check" size={18} color="#4ade80" />
+                                ) : null}
+                              </View>
+                            </ScalePressable>
+                          );
+                        })}
                       </View>
                     </>
                   )}
@@ -600,16 +729,48 @@ export default function PuzzlesScreen() {
                         ))}
                       </View>
                       <View style={styles.optionsGrid}>
-                        {crossMathSet[gameStepIndex]?.options.map((opt, idx) => (
-                          <ScalePressable
-                            key={idx}
-                            containerStyle={styles.optionBtnContainer}
-                            style={styles.optionBtn}
-                            onPress={() => handleGenericAnswer(opt === crossMathSet[gameStepIndex]?.missingCell.answer, 10)}
-                          >
-                            <Text style={styles.optionBtnText}>{opt}</Text>
-                          </ScalePressable>
-                        ))}
+                        {crossMathSet[gameStepIndex]?.options.map((opt, idx) => {
+                          const isSelected = selectedOption === opt;
+                          const targetAns = crossMathSet[gameStepIndex]?.missingCell.answer;
+                          const isCorrectTarget = Number(opt) === Number(targetAns);
+                          const isSelectedCorrect = feedbackState === 'correct' && isSelected;
+                          const isSelectedWrong = feedbackState === 'wrong' && isSelected;
+                          const isTargetHighlight = feedbackState === 'wrong' && isCorrectTarget;
+
+                          return (
+                            <ScalePressable
+                              key={idx}
+                              disabled={feedbackState !== null}
+                              containerStyle={styles.optionBtnContainer}
+                              style={[
+                                styles.optionBtn,
+                                isSelectedCorrect && styles.optionBtnCorrect,
+                                isSelectedWrong && styles.optionBtnWrong,
+                                isTargetHighlight && styles.optionBtnTargetHighlight,
+                              ]}
+                              onPress={() => handleGenericAnswer(opt === targetAns, targetAns, opt, 10)}
+                            >
+                              <View style={styles.optionContentRow}>
+                                <Text
+                                  style={[
+                                    styles.optionBtnText,
+                                    (isSelectedCorrect || isTargetHighlight) && styles.optionTextCorrect,
+                                    isSelectedWrong && styles.optionTextWrong,
+                                  ]}
+                                >
+                                  {opt}
+                                </Text>
+                                {isSelectedCorrect ? (
+                                  <MaterialCommunityIcons name="check-circle" size={18} color="#4ade80" />
+                                ) : isSelectedWrong ? (
+                                  <MaterialCommunityIcons name="close-circle" size={18} color="#f87171" />
+                                ) : isTargetHighlight ? (
+                                  <MaterialCommunityIcons name="check" size={18} color="#4ade80" />
+                                ) : null}
+                              </View>
+                            </ScalePressable>
+                          );
+                        })}
                       </View>
                     </>
                   )}
@@ -626,16 +787,48 @@ export default function PuzzlesScreen() {
                         </Text>
                       </View>
                       <View style={styles.optionsGrid}>
-                        {kenKenSet[gameStepIndex]?.options.map((opt, idx) => (
-                          <ScalePressable
-                            key={idx}
-                            containerStyle={styles.optionBtnContainer}
-                            style={styles.optionBtn}
-                            onPress={() => handleGenericAnswer(opt === kenKenSet[gameStepIndex]?.answer, 10)}
-                          >
-                            <Text style={styles.optionBtnText}>{opt}</Text>
-                          </ScalePressable>
-                        ))}
+                        {kenKenSet[gameStepIndex]?.options.map((opt, idx) => {
+                          const isSelected = selectedOption === opt;
+                          const targetAns = kenKenSet[gameStepIndex]?.answer;
+                          const isCorrectTarget = Number(opt) === Number(targetAns);
+                          const isSelectedCorrect = feedbackState === 'correct' && isSelected;
+                          const isSelectedWrong = feedbackState === 'wrong' && isSelected;
+                          const isTargetHighlight = feedbackState === 'wrong' && isCorrectTarget;
+
+                          return (
+                            <ScalePressable
+                              key={idx}
+                              disabled={feedbackState !== null}
+                              containerStyle={styles.optionBtnContainer}
+                              style={[
+                                styles.optionBtn,
+                                isSelectedCorrect && styles.optionBtnCorrect,
+                                isSelectedWrong && styles.optionBtnWrong,
+                                isTargetHighlight && styles.optionBtnTargetHighlight,
+                              ]}
+                              onPress={() => handleGenericAnswer(opt === targetAns, targetAns, opt, 10)}
+                            >
+                              <View style={styles.optionContentRow}>
+                                <Text
+                                  style={[
+                                    styles.optionBtnText,
+                                    (isSelectedCorrect || isTargetHighlight) && styles.optionTextCorrect,
+                                    isSelectedWrong && styles.optionTextWrong,
+                                  ]}
+                                >
+                                  {opt}
+                                </Text>
+                                {isSelectedCorrect ? (
+                                  <MaterialCommunityIcons name="check-circle" size={18} color="#4ade80" />
+                                ) : isSelectedWrong ? (
+                                  <MaterialCommunityIcons name="close-circle" size={18} color="#f87171" />
+                                ) : isTargetHighlight ? (
+                                  <MaterialCommunityIcons name="check" size={18} color="#4ade80" />
+                                ) : null}
+                              </View>
+                            </ScalePressable>
+                          );
+                        })}
                       </View>
                     </>
                   )}
@@ -650,16 +843,46 @@ export default function PuzzlesScreen() {
                         <Text style={styles.expressionText}>Select Door Path:</Text>
                       </View>
                       <View style={styles.optionsGrid}>
-                        {mathMazeSet[gameStepIndex]?.steps[0].options.map((door, idx) => (
-                          <ScalePressable
-                            key={idx}
-                            containerStyle={styles.optionBtnContainer}
-                            style={styles.optionBtn}
-                            onPress={() => handleGenericAnswer(door.isCorrect, 5)}
-                          >
-                            <Text style={styles.optionBtnText}>{door.label}</Text>
-                          </ScalePressable>
-                        ))}
+                        {mathMazeSet[gameStepIndex]?.steps[0].options.map((door, idx) => {
+                          const isSelected = selectedOption === door.label;
+                          const isSelectedCorrect = feedbackState === 'correct' && isSelected;
+                          const isSelectedWrong = feedbackState === 'wrong' && isSelected;
+                          const isTargetHighlight = feedbackState === 'wrong' && door.isCorrect;
+
+                          return (
+                            <ScalePressable
+                              key={idx}
+                              disabled={feedbackState !== null}
+                              containerStyle={styles.optionBtnContainer}
+                              style={[
+                                styles.optionBtn,
+                                isSelectedCorrect && styles.optionBtnCorrect,
+                                isSelectedWrong && styles.optionBtnWrong,
+                                isTargetHighlight && styles.optionBtnTargetHighlight,
+                              ]}
+                              onPress={() => handleGenericAnswer(door.isCorrect, 'Correct Door', door.label, 5)}
+                            >
+                              <View style={styles.optionContentRow}>
+                                <Text
+                                  style={[
+                                    styles.optionBtnText,
+                                    (isSelectedCorrect || isTargetHighlight) && styles.optionTextCorrect,
+                                    isSelectedWrong && styles.optionTextWrong,
+                                  ]}
+                                >
+                                  {door.label}
+                                </Text>
+                                {isSelectedCorrect ? (
+                                  <MaterialCommunityIcons name="check-circle" size={18} color="#4ade80" />
+                                ) : isSelectedWrong ? (
+                                  <MaterialCommunityIcons name="close-circle" size={18} color="#f87171" />
+                                ) : isTargetHighlight ? (
+                                  <MaterialCommunityIcons name="check" size={18} color="#4ade80" />
+                                ) : null}
+                              </View>
+                            </ScalePressable>
+                          );
+                        })}
                       </View>
                     </>
                   )}
@@ -679,16 +902,47 @@ export default function PuzzlesScreen() {
                       </View>
                       {memoryPhase === 'recall' && (
                         <View style={styles.optionsGrid}>
-                          {mindSnapSet[gameStepIndex]?.options.slice(0, 4).map((sym, idx) => (
-                            <ScalePressable
-                              key={idx}
-                              containerStyle={styles.optionBtnContainer}
-                              style={styles.optionBtn}
-                              onPress={() => handleGenericAnswer(mindSnapSet[gameStepIndex]?.correctSymbols.includes(sym), 10)}
-                            >
-                              <Text style={styles.optionBtnText}>{sym}</Text>
-                            </ScalePressable>
-                          ))}
+                          {mindSnapSet[gameStepIndex]?.options.slice(0, 4).map((sym, idx) => {
+                            const isSelected = selectedOption === sym;
+                            const isCorrectTarget = mindSnapSet[gameStepIndex]?.correctSymbols.includes(sym);
+                            const isSelectedCorrect = feedbackState === 'correct' && isSelected;
+                            const isSelectedWrong = feedbackState === 'wrong' && isSelected;
+                            const isTargetHighlight = feedbackState === 'wrong' && isCorrectTarget;
+
+                            return (
+                              <ScalePressable
+                                key={idx}
+                                disabled={feedbackState !== null}
+                                containerStyle={styles.optionBtnContainer}
+                                style={[
+                                  styles.optionBtn,
+                                  isSelectedCorrect && styles.optionBtnCorrect,
+                                  isSelectedWrong && styles.optionBtnWrong,
+                                  isTargetHighlight && styles.optionBtnTargetHighlight,
+                                ]}
+                                onPress={() => handleGenericAnswer(isCorrectTarget, 'Matching Symbols', sym, 10)}
+                              >
+                                <View style={styles.optionContentRow}>
+                                  <Text
+                                    style={[
+                                      styles.optionBtnText,
+                                      (isSelectedCorrect || isTargetHighlight) && styles.optionTextCorrect,
+                                      isSelectedWrong && styles.optionTextWrong,
+                                    ]}
+                                  >
+                                    {sym}
+                                  </Text>
+                                  {isSelectedCorrect ? (
+                                    <MaterialCommunityIcons name="check-circle" size={18} color="#4ade80" />
+                                  ) : isSelectedWrong ? (
+                                    <MaterialCommunityIcons name="close-circle" size={18} color="#f87171" />
+                                  ) : isTargetHighlight ? (
+                                    <MaterialCommunityIcons name="check" size={18} color="#4ade80" />
+                                  ) : null}
+                                </View>
+                              </ScalePressable>
+                            );
+                          })}
                         </View>
                       )}
                     </>
@@ -706,16 +960,48 @@ export default function PuzzlesScreen() {
                         </Text>
                       </View>
                       <View style={styles.optionsGrid}>
-                        {flashAnzanSet[gameStepIndex]?.options.map((opt, idx) => (
-                          <ScalePressable
-                            key={idx}
-                            containerStyle={styles.optionBtnContainer}
-                            style={styles.optionBtn}
-                            onPress={() => handleGenericAnswer(opt === flashAnzanSet[gameStepIndex]?.totalSum, 10)}
-                          >
-                            <Text style={styles.optionBtnText}>{opt}</Text>
-                          </ScalePressable>
-                        ))}
+                        {flashAnzanSet[gameStepIndex]?.options.map((opt, idx) => {
+                          const isSelected = selectedOption === opt;
+                          const targetAns = flashAnzanSet[gameStepIndex]?.totalSum;
+                          const isCorrectTarget = Number(opt) === Number(targetAns);
+                          const isSelectedCorrect = feedbackState === 'correct' && isSelected;
+                          const isSelectedWrong = feedbackState === 'wrong' && isSelected;
+                          const isTargetHighlight = feedbackState === 'wrong' && isCorrectTarget;
+
+                          return (
+                            <ScalePressable
+                              key={idx}
+                              disabled={feedbackState !== null}
+                              containerStyle={styles.optionBtnContainer}
+                              style={[
+                                styles.optionBtn,
+                                isSelectedCorrect && styles.optionBtnCorrect,
+                                isSelectedWrong && styles.optionBtnWrong,
+                                isTargetHighlight && styles.optionBtnTargetHighlight,
+                              ]}
+                              onPress={() => handleGenericAnswer(opt === targetAns, targetAns, opt, 10)}
+                            >
+                              <View style={styles.optionContentRow}>
+                                <Text
+                                  style={[
+                                    styles.optionBtnText,
+                                    (isSelectedCorrect || isTargetHighlight) && styles.optionTextCorrect,
+                                    isSelectedWrong && styles.optionTextWrong,
+                                  ]}
+                                >
+                                  {opt}
+                                </Text>
+                                {isSelectedCorrect ? (
+                                  <MaterialCommunityIcons name="check-circle" size={18} color="#4ade80" />
+                                ) : isSelectedWrong ? (
+                                  <MaterialCommunityIcons name="close-circle" size={18} color="#f87171" />
+                                ) : isTargetHighlight ? (
+                                  <MaterialCommunityIcons name="check" size={18} color="#4ade80" />
+                                ) : null}
+                              </View>
+                            </ScalePressable>
+                          );
+                        })}
                       </View>
                     </>
                   )}
@@ -737,33 +1023,88 @@ export default function PuzzlesScreen() {
                         </Text>
                       </View>
                       <View style={styles.optionsGrid}>
-                        {logicSet[gameStepIndex]?.options.map((opt, idx) => (
-                          <ScalePressable
-                            key={idx}
-                            containerStyle={styles.optionBtnContainer}
-                            style={styles.optionBtn}
-                            onPress={() => handleGenericAnswer(opt === logicSet[gameStepIndex]?.answer, 20)}
-                          >
-                            <Text style={styles.optionBtnText}>{opt}</Text>
-                          </ScalePressable>
-                        ))}
+                        {logicSet[gameStepIndex]?.options.map((opt, idx) => {
+                          const isSelected = selectedOption === opt;
+                          const targetAns = logicSet[gameStepIndex]?.answer;
+                          const isCorrectTarget = String(opt) === String(targetAns);
+                          const isSelectedCorrect = feedbackState === 'correct' && isSelected;
+                          const isSelectedWrong = feedbackState === 'wrong' && isSelected;
+                          const isTargetHighlight = feedbackState === 'wrong' && isCorrectTarget;
+
+                          return (
+                            <ScalePressable
+                              key={idx}
+                              disabled={feedbackState !== null}
+                              containerStyle={styles.optionBtnContainer}
+                              style={[
+                                styles.optionBtn,
+                                isSelectedCorrect && styles.optionBtnCorrect,
+                                isSelectedWrong && styles.optionBtnWrong,
+                                isTargetHighlight && styles.optionBtnTargetHighlight,
+                              ]}
+                              onPress={() => handleGenericAnswer(opt === targetAns, targetAns, opt, 20)}
+                            >
+                              <View style={styles.optionContentRow}>
+                                <Text
+                                  style={[
+                                    styles.optionBtnText,
+                                    (isSelectedCorrect || isTargetHighlight) && styles.optionTextCorrect,
+                                    isSelectedWrong && styles.optionTextWrong,
+                                  ]}
+                                >
+                                  {opt}
+                                </Text>
+                                {isSelectedCorrect ? (
+                                  <MaterialCommunityIcons name="check-circle" size={18} color="#4ade80" />
+                                ) : isSelectedWrong ? (
+                                  <MaterialCommunityIcons name="close-circle" size={18} color="#f87171" />
+                                ) : isTargetHighlight ? (
+                                  <MaterialCommunityIcons name="check" size={18} color="#4ade80" />
+                                ) : null}
+                              </View>
+                            </ScalePressable>
+                          );
+                        })}
                       </View>
                     </>
                   )}
                 </View>
               ) : (
                 <View style={styles.victoryBody}>
-                  <MaterialCommunityIcons name="trophy" size={54} color="#facc15" />
+                  <MaterialCommunityIcons name="trophy-award" size={56} color="#facc15" />
                   <Text style={styles.victoryTitle}>QUEST COMPLETED! 🏆</Text>
                   <Text style={styles.victorySub}>
-                    Score: {gameScore} Correct • +1 Quest Point
+                    {activeQuestGame?.name} set finished! Performance breakdown:
                   </Text>
+
+                  {/* Summary Stats Grid: Correct, Wrong, Accuracy */}
+                  <View style={styles.summaryStatsGrid}>
+                    <View style={styles.summaryStatCardGreen}>
+                      <MaterialCommunityIcons name="check-circle" size={24} color="#4ade80" />
+                      <Text style={styles.summaryStatNumGreen}>{correctCount}</Text>
+                      <Text style={styles.summaryStatLabel}>Correct</Text>
+                    </View>
+
+                    <View style={styles.summaryStatCardRed}>
+                      <MaterialCommunityIcons name="close-circle" size={24} color="#f87171" />
+                      <Text style={styles.summaryStatNumRed}>{wrongCount}</Text>
+                      <Text style={styles.summaryStatLabel}>Wrong</Text>
+                    </View>
+
+                    <View style={styles.summaryStatCardBlue}>
+                      <MaterialCommunityIcons name="percent" size={24} color="#38bdf8" />
+                      <Text style={styles.summaryStatNumBlue}>
+                        {Math.round((correctCount / Math.max(1, correctCount + wrongCount)) * 100)}%
+                      </Text>
+                      <Text style={styles.summaryStatLabel}>Accuracy</Text>
+                    </View>
+                  </View>
 
                   <ScalePressable
                     style={styles.claimQuestBtn}
                     onPress={() => setActiveQuestGame(null)}
                   >
-                    <Text style={styles.claimQuestBtnText}>Claim Rewards</Text>
+                    <Text style={styles.claimQuestBtnText}>Claim Rewards & Finish</Text>
                   </ScalePressable>
                 </View>
               )}
@@ -1059,15 +1400,73 @@ const styles = StyleSheet.create({
     height: 54,
     backgroundColor: '#171920',
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#20242d',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  optionContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    width: '100%',
+  },
+  optionBtnCorrect: {
+    backgroundColor: 'rgba(74, 222, 128, 0.18)',
+    borderColor: '#4ade80',
+  },
+  optionBtnWrong: {
+    backgroundColor: 'rgba(248, 113, 113, 0.18)',
+    borderColor: '#f87171',
+  },
+  optionBtnTargetHighlight: {
+    backgroundColor: 'rgba(74, 222, 128, 0.12)',
+    borderColor: '#4ade80',
   },
   optionBtnText: {
     fontSize: 18,
     fontWeight: '700',
     color: '#ffffff',
+  },
+  optionTextCorrect: {
+    color: '#4ade80',
+  },
+  optionTextWrong: {
+    color: '#f87171',
+  },
+
+  // Inline Feedback Banner
+  feedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    width: '100%',
+  },
+  feedbackBannerCorrect: {
+    backgroundColor: 'rgba(74, 222, 128, 0.12)',
+    borderColor: '#4ade80',
+  },
+  feedbackBannerWrong: {
+    backgroundColor: 'rgba(248, 113, 113, 0.12)',
+    borderColor: '#f87171',
+  },
+  feedbackBannerText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  feedbackTextCorrect: {
+    color: '#4ade80',
+  },
+  feedbackTextWrong: {
+    color: '#f87171',
   },
 
   /* Sudoku & Cross Math Grids */
@@ -1117,6 +1516,7 @@ const styles = StyleSheet.create({
   victoryBody: {
     alignItems: 'center',
     paddingVertical: 20,
+    width: '100%',
   },
   victoryTitle: {
     fontSize: 22,
@@ -1129,16 +1529,80 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#9ca3af',
     textAlign: 'center',
+    marginBottom: 20,
+  },
+
+  // Summary Stats Grid
+  summaryStatsGrid: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    width: '100%',
     marginBottom: 24,
   },
+  summaryStatCardGreen: {
+    flex: 1,
+    backgroundColor: 'rgba(74, 222, 128, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(74, 222, 128, 0.3)',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  summaryStatNumGreen: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#4ade80',
+    marginTop: 4,
+  },
+  summaryStatCardRed: {
+    flex: 1,
+    backgroundColor: 'rgba(248, 113, 113, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.3)',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  summaryStatNumRed: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#f87171',
+    marginTop: 4,
+  },
+  summaryStatCardBlue: {
+    flex: 1,
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  summaryStatNumBlue: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#38bdf8',
+    marginTop: 4,
+  },
+  summaryStatLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94a3b8',
+    marginTop: 2,
+  },
+
   claimQuestBtn: {
     backgroundColor: '#84cc16',
     paddingHorizontal: 28,
-    paddingVertical: 12,
-    borderRadius: 14,
+    paddingVertical: 14,
+    borderRadius: 16,
+    width: '100%',
+    alignItems: 'center',
   },
   claimQuestBtnText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '800',
     color: '#000000',
   },
