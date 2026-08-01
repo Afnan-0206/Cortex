@@ -28,6 +28,7 @@ export default function BattleScreen() {
   const battle = useBattleStore();
   const [userInput, setUserInput] = useState<string>('');
   const [inputErrorFlash, setInputErrorFlash] = useState<boolean>(false);
+  const [inputSuccessFlash, setInputSuccessFlash] = useState<boolean>(false);
   const [showTutorial, setShowTutorial] = useState<boolean>(false);
 
   const currentQ = battle.questions[battle.currentQuestionIndex] || battle.questions[0];
@@ -44,7 +45,7 @@ export default function BattleScreen() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [battle.status, battle.currentQuestionIndex, battle.timeLeft]);
+  }, [battle.status]);
 
   useEffect(() => {
     if (battle.status === 'playing' && battle.timeLeft <= 10) {
@@ -77,20 +78,28 @@ export default function BattleScreen() {
       return;
     }
 
+    if (key === '±') {
+      setUserInput((prev) => (prev.startsWith('-') ? prev.slice(1) : prev ? '-' + prev : '-'));
+      return;
+    }
+
     if (key === '✓') {
-      // Manual submit check
       const numericVal = parseFloat(userInput);
-      if (numericVal === currentQ.answer) {
+      if (!isNaN(numericVal) && numericVal === currentQ.answer) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        battle.submitAnswer(numericVal);
-        setUserInput('');
+        setInputSuccessFlash(true);
+        setTimeout(() => {
+          setInputSuccessFlash(false);
+          battle.submitAnswer(numericVal);
+          setUserInput('');
+        }, 200);
       } else {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
         setInputErrorFlash(true);
         setTimeout(() => {
           setInputErrorFlash(false);
           setUserInput('');
-        }, 300);
+        }, 350);
       }
       return;
     }
@@ -102,10 +111,12 @@ export default function BattleScreen() {
     const numericVal = parseFloat(nextVal);
     if (numericVal === currentQ.answer) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      setInputSuccessFlash(true);
       setTimeout(() => {
+        setInputSuccessFlash(false);
         battle.submitAnswer(numericVal);
         setUserInput('');
-      }, 120);
+      }, 200);
     }
   };
 
@@ -229,7 +240,7 @@ export default function BattleScreen() {
         {/* ── TOP HEADER WITH MINIMAL SCORE & 60s TIMER ── */}
         <View style={styles.clockHeader}>
           <View style={styles.headerTopRow}>
-            <Text style={styles.playerName}>Afnan vs {battle.opponent.name}</Text>
+            <Text style={styles.playerName}>{battle.user.name} vs {battle.opponent.name}</Text>
             <Pressable onPress={handleExit} style={styles.quitBtn}>
               <Text style={styles.quitText}>Surrender</Text>
             </Pressable>
@@ -281,7 +292,11 @@ export default function BattleScreen() {
             <View style={styles.columnDividerLine} />
 
             {/* Glowing Answer Input Display Box */}
-            <View style={[styles.inputBox, inputErrorFlash && styles.inputBoxError]}>
+            <View style={[
+              styles.inputBox,
+              inputSuccessFlash && styles.inputBoxSuccess,
+              inputErrorFlash && styles.inputBoxError,
+            ]}>
               <Text style={styles.inputText}>
                 {userInput ? userInput : <Text style={styles.inputPlaceholder}>_</Text>}
               </Text>
@@ -292,15 +307,18 @@ export default function BattleScreen() {
         {/* ── CUSTOM NUMERIC KEYPAD (0-9, BACKSPACE, SUBMIT) ── */}
         <View style={styles.keypadSection}>
           <View style={styles.keypadGrid}>
-            {['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', '✓'].map((key) => (
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9', '±', '0', '⌫', '   ', '✓', '   '].map((key, ki) => (
               <Pressable
-                key={key}
+                key={ki}
                 style={[
                   styles.keypadBtn,
                   key === '✓' && styles.keypadSubmitBtn,
                   key === '⌫' && styles.keypadDelBtn,
+                  key === '±' && styles.keypadNegBtn,
+                  key.trim() === '' && styles.keypadBlankBtn,
                 ]}
-                onPress={() => handleKeypadPress(key)}
+                disabled={key.trim() === ''}
+                onPress={() => key.trim() !== '' && handleKeypadPress(key)}
               >
                 <Text
                   style={[
@@ -884,6 +902,18 @@ const styles = StyleSheet.create({
   },
   keypadDelBtn: {
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  keypadNegBtn: {
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+  },
+  keypadBlankBtn: {
+    backgroundColor: 'transparent',
+    borderColor: 'transparent',
+  },
+  inputBoxSuccess: {
+    borderColor: '#4ade80',
+    backgroundColor: 'rgba(74, 222, 128, 0.12)',
   },
   keypadBtnText: {
     fontFamily: 'Inter_600SemiBold',

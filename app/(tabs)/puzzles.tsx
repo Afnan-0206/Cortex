@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,8 +6,6 @@ import {
   ScrollView,
   Pressable,
   Modal,
-  Platform,
-  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -25,7 +23,6 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Video, ResizeMode } from 'expo-av';
 import { useUserStore } from '../../src/store/userStore';
 import {
   generateNeuroSprintSet,
@@ -101,50 +98,40 @@ const ScalePressable: React.FC<ScalePressableProps> = ({
   );
 };
 
-// Breathing Neural Video Component for Cortex Space
+// Breathing Neural Orb — pure animated view, no video asset needed
 const BreathingOrb = () => {
-  let videoUri = '';
-  try {
-    const { Asset } = require('expo-asset');
-    videoUri = Asset.fromModule(require('../../assets/breathing.mp4'))?.uri || '';
-  } catch {
-    try {
-      videoUri = (Image as any).resolveAssetSource?.(require('../../assets/breathing.mp4'))?.uri || '';
-    } catch {
-      videoUri = '';
-    }
-  }
+  const scale = useSharedValue(1);
+  const opacity = useSharedValue(0.7);
 
-  if (Platform.OS === 'web') {
-    return (
-      <View style={styles.videoOrbWrapper}>
-        <video
-          src={videoUri}
-          autoPlay
-          loop
-          muted
-          playsInline
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            borderRadius: 20,
-          }}
-        />
-      </View>
+  useEffect(() => {
+    scale.value = withRepeat(
+      withSequence(
+        withTiming(1.18, { duration: 2200, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.88, { duration: 2200, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1,
+      true
     );
-  }
+    opacity.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 2200 }),
+        withTiming(0.5, { duration: 2200 })
+      ),
+      -1,
+      true
+    );
+  }, []);
+
+  const orbStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
 
   return (
     <View style={styles.videoOrbWrapper}>
-      <Video
-        source={require('../../assets/breathing.mp4')}
-        style={styles.videoOrb}
-        shouldPlay
-        isLooping
-        isMuted
-        resizeMode={ResizeMode.COVER}
-      />
+      <Animated.View style={[styles.breathingOrbCore, orbStyle]}>
+        <MaterialCommunityIcons name="brain" size={28} color="#84cc16" />
+      </Animated.View>
     </View>
   );
 };
@@ -169,13 +156,17 @@ export default function PuzzlesScreen() {
   // Game Engine Specific States
   const [gameStepIndex, setGameStepIndex] = useState(0);
   const [gameScore, setGameScore] = useState(0);
+  const gameScoreRef = useRef(0); // stable ref to avoid stale closure
   const [gameDone, setGameDone] = useState(false);
   const [memoryPhase, setMemoryPhase] = useState<'observe' | 'recall'>('observe');
+  const memoryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [userSequence, setUserSequence] = useState<number[]>([]);
 
   // Answer Feedback States
   const [selectedOption, setSelectedOption] = useState<any>(null);
   const [feedbackState, setFeedbackState] = useState<'correct' | 'wrong' | null>(null);
+  const correctCountRef = useRef(0);
+  const wrongCountRef = useRef(0);
   const [correctCount, setCorrectCount] = useState<number>(0);
   const [wrongCount, setWrongCount] = useState<number>(0);
   const [correctAnswerVal, setCorrectAnswerVal] = useState<any>(null);
@@ -293,27 +284,15 @@ export default function PuzzlesScreen() {
   const handleLaunchQuest = (quest: QuestItem) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 
-    if (quest.id === 'q1_fast') {
-      router.push('/fast-first');
-      return;
-    }
-    if (quest.id === 'q2') {
-      router.push('/sudoku-duel');
-      return;
-    }
-    if (quest.id === 'q3') {
-      router.push('/cross-math-duel');
-      return;
-    }
-    if (quest.id === 'q4') {
-      router.push('/kenken-duel');
-      return;
-    }
-    if (quest.id === 'q5') {
-      router.push('/math-maze-duel');
-      return;
-    }
+    // Route-based duels — navigate away, do NOT open modal
+    if (quest.id === 'q1_fast') { router.push('/fast-first'); return; }
+    if (quest.id === 'q6_mind_snap_routed') { router.push('/mind-snap-duel'); return; }
+    if (quest.id === 'q7_flash_routed') { router.push('/flash-anzan-duel'); return; }
 
+    // Modal-based games — reset all state
+    gameScoreRef.current = 0;
+    correctCountRef.current = 0;
+    wrongCountRef.current = 0;
     setActiveQuestGame(quest);
     setGameStepIndex(0);
     setGameScore(0);
@@ -321,6 +300,7 @@ export default function PuzzlesScreen() {
     setWrongCount(0);
     setSelectedOption(null);
     setFeedbackState(null);
+    setCorrectAnswerVal(null);
     setGameDone(false);
     setUserSequence([]);
 
@@ -337,7 +317,8 @@ export default function PuzzlesScreen() {
     } else if (quest.id === 'q6') {
       setMindSnapSet(generateMindSnapSet(10));
       setMemoryPhase('observe');
-      setTimeout(() => setMemoryPhase('recall'), 1500);
+      if (memoryTimerRef.current) clearTimeout(memoryTimerRef.current);
+      memoryTimerRef.current = setTimeout(() => setMemoryPhase('recall'), 1800);
     } else if (quest.id === 'q7') {
       setFlashAnzanSet(generateFlashAnzanSet(10));
     } else if (quest.id === 'q8') {
@@ -347,8 +328,7 @@ export default function PuzzlesScreen() {
     }
   };
 
-  const advanceOrFinishSet = async (nextScore: number, totalQuestions: number = 10) => {
-    const nextStep = gameStepIndex + 1;
+  const advanceOrFinishSet = async (nextScore: number, nextStep: number, totalQuestions: number = 10) => {
     if (activeQuestGame) {
       await updateQuestProgress(activeQuestGame.id, nextStep);
     }
@@ -357,7 +337,8 @@ export default function PuzzlesScreen() {
       setGameStepIndex(nextStep);
       if (activeQuestGame?.id === 'q6') {
         setMemoryPhase('observe');
-        setTimeout(() => setMemoryPhase('recall'), 1500);
+        if (memoryTimerRef.current) clearTimeout(memoryTimerRef.current);
+        memoryTimerRef.current = setTimeout(() => setMemoryPhase('recall'), 1800);
       }
     } else {
       setGameDone(true);
@@ -379,22 +360,27 @@ export default function PuzzlesScreen() {
     setSelectedOption(chosenVal);
     setCorrectAnswerVal(targetCorrectVal);
 
+    const nextStep = gameStepIndex + 1;
+
     if (isCorrect) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setFeedbackState('correct');
-      setCorrectCount((c) => c + 1);
-      setGameScore((s) => s + 1);
+      correctCountRef.current += 1;
+      gameScoreRef.current += 1;
+      setCorrectCount(correctCountRef.current);
+      setGameScore(gameScoreRef.current);
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
       setFeedbackState('wrong');
-      setWrongCount((w) => w + 1);
+      wrongCountRef.current += 1;
+      setWrongCount(wrongCountRef.current);
     }
 
     setTimeout(async () => {
       setSelectedOption(null);
       setFeedbackState(null);
-      await advanceOrFinishSet(gameScore + (isCorrect ? 1 : 0), totalQuestions);
-    }, 800);
+      await advanceOrFinishSet(gameScoreRef.current, nextStep, totalQuestions);
+    }, 900);
   };
 
   return (
@@ -540,6 +526,7 @@ export default function PuzzlesScreen() {
               </View>
 
               {!gameDone ? (
+                <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
                 <View style={styles.gameBody}>
                   {/* 1. Sprint Duels (q1) */}
                   {activeQuestGame?.id === 'q1' && mathSet.length > 0 && (
@@ -728,6 +715,17 @@ export default function PuzzlesScreen() {
                           </View>
                         ))}
                       </View>
+
+                      {/* Inline Answer Feedback Banner */}
+                      {feedbackState !== null && (
+                        <Animated.View entering={FadeInDown.duration(200)} style={[styles.feedbackBanner, feedbackState === 'correct' ? styles.feedbackBannerCorrect : styles.feedbackBannerWrong]}>
+                          <MaterialCommunityIcons name={feedbackState === 'correct' ? 'check-circle' : 'close-circle'} size={18} color={feedbackState === 'correct' ? '#4ade80' : '#f87171'} />
+                          <Text style={[styles.feedbackBannerText, feedbackState === 'correct' ? styles.feedbackTextCorrect : styles.feedbackTextWrong]}>
+                            {feedbackState === 'correct' ? '✓ Correct! +10 XP' : `✕ Wrong — correct answer was ${correctAnswerVal}`}
+                          </Text>
+                        </Animated.View>
+                      )}
+
                       <View style={styles.optionsGrid}>
                         {crossMathSet[gameStepIndex]?.options.map((opt, idx) => {
                           const isSelected = selectedOption === opt;
@@ -786,6 +784,17 @@ export default function PuzzlesScreen() {
                           Cage Target: {kenKenSet[gameStepIndex]?.cageTarget}
                         </Text>
                       </View>
+
+                      {/* Inline Answer Feedback Banner */}
+                      {feedbackState !== null && (
+                        <Animated.View entering={FadeInDown.duration(200)} style={[styles.feedbackBanner, feedbackState === 'correct' ? styles.feedbackBannerCorrect : styles.feedbackBannerWrong]}>
+                          <MaterialCommunityIcons name={feedbackState === 'correct' ? 'check-circle' : 'close-circle'} size={18} color={feedbackState === 'correct' ? '#4ade80' : '#f87171'} />
+                          <Text style={[styles.feedbackBannerText, feedbackState === 'correct' ? styles.feedbackTextCorrect : styles.feedbackTextWrong]}>
+                            {feedbackState === 'correct' ? '✓ Correct! +10 XP' : `✕ Wrong — correct answer was ${correctAnswerVal}`}
+                          </Text>
+                        </Animated.View>
+                      )}
+
                       <View style={styles.optionsGrid}>
                         {kenKenSet[gameStepIndex]?.options.map((opt, idx) => {
                           const isSelected = selectedOption === opt;
@@ -842,6 +851,17 @@ export default function PuzzlesScreen() {
                       <View style={styles.expressionBox}>
                         <Text style={styles.expressionText}>Select Door Path:</Text>
                       </View>
+
+                      {/* Inline Answer Feedback Banner */}
+                      {feedbackState !== null && (
+                        <Animated.View entering={FadeInDown.duration(200)} style={[styles.feedbackBanner, feedbackState === 'correct' ? styles.feedbackBannerCorrect : styles.feedbackBannerWrong]}>
+                          <MaterialCommunityIcons name={feedbackState === 'correct' ? 'check-circle' : 'close-circle'} size={18} color={feedbackState === 'correct' ? '#4ade80' : '#f87171'} />
+                          <Text style={[styles.feedbackBannerText, feedbackState === 'correct' ? styles.feedbackTextCorrect : styles.feedbackTextWrong]}>
+                            {feedbackState === 'correct' ? '✓ Correct Path!' : '✕ Wrong Path — try the other door'}
+                          </Text>
+                        </Animated.View>
+                      )}
+
                       <View style={styles.optionsGrid}>
                         {mathMazeSet[gameStepIndex]?.steps[0].options.map((door, idx) => {
                           const isSelected = selectedOption === door.label;
@@ -1069,6 +1089,7 @@ export default function PuzzlesScreen() {
                     </>
                   )}
                 </View>
+                </ScrollView>
               ) : (
                 <View style={styles.victoryBody}>
                   <MaterialCommunityIcons name="trophy-award" size={56} color="#facc15" />
@@ -1201,10 +1222,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 2,
     borderColor: 'rgba(132, 204, 22, 0.4)',
+    backgroundColor: 'rgba(132, 204, 22, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  videoOrb: {
-    width: '100%',
-    height: '100%',
+  breathingOrbCore: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(132, 204, 22, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   sectionHeaderRow: {

@@ -48,6 +48,15 @@ export default function DailyChallengeScreen() {
   const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
 
+  // Dynamic total question count from sections
+  const totalQuestions = sections.reduce((sum, s) => sum + s.questionCount, 0) || 15;
+
+  // Reset per-question feedback when the question advances
+  useEffect(() => {
+    setSelectedOption(null);
+    setFeedback(null);
+  }, [currentQuestionIndex]);
+
   // Format date e.g. "SATURDAY, AUG 1"
   const formattedDate = new Date().toLocaleDateString('en-US', {
     weekday: 'short',
@@ -92,7 +101,7 @@ export default function DailyChallengeScreen() {
       setSelectedOption(null);
       setFeedback(null);
 
-      if (currentQuestionIndex + 1 >= 15) {
+      if (currentQuestionIndex + 1 >= totalQuestions) {
         setShowCompletionModal(true);
       }
     }, 600);

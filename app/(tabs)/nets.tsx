@@ -29,6 +29,7 @@ export default function NetsScreen() {
   const [selectedOp, setSelectedOp] = useState<string>('multiplication');
   const [digitCount, setDigitCount] = useState<number>(3);
   const [isPracticing, setIsPracticing] = useState<boolean>(false);
+  const [showAnswer, setShowAnswer] = useState<boolean>(false);
   const [problem, setProblem] = useState<{ p: string; a: number }>({ p: '48 × 7', a: 336 });
 
   // Rollback Toast Banner State
@@ -75,11 +76,13 @@ export default function NetsScreen() {
     if (op === 'subtraction') return { p: `${n1} - ${n2 * 5}`, a: n1 - n2 * 5 };
     if (op === 'division') return { p: `${n1 * n2} ÷ ${n2}`, a: n1 };
     if (op === 'square_root') return { p: `√${n2 * n2}`, a: n2 };
+    if (op === 'cube_root') return { p: `³√${n2 * n2 * n2}`, a: n2 };
     return { p: `${n1} × ${n2}`, a: n1 * n2 };
   };
 
   const handleStartPractice = () => {
     setProblem(generateProblem(selectedOp, digitCount));
+    setShowAnswer(false);
     setIsPracticing(true);
   };
 
@@ -166,12 +169,27 @@ export default function NetsScreen() {
               <Text style={styles.practiceHeader}>Target Problem</Text>
               <Text style={styles.problemText}>{problem.p}</Text>
 
-              <Text style={styles.answerHint}>Answer: {problem.a}</Text>
+              <Pressable
+                onPress={() => setShowAnswer((prev) => !prev)}
+                style={styles.revealBtn}
+              >
+                <MaterialCommunityIcons
+                  name={showAnswer ? 'eye-off-outline' : 'eye-outline'}
+                  size={16}
+                  color={colors.accent}
+                />
+                <Text style={styles.answerHint}>
+                  {showAnswer ? `Answer: ${problem.a}` : 'Tap to Reveal Answer'}
+                </Text>
+              </Pressable>
 
               <View style={styles.practiceActions}>
                 <CortexButton
                   label="Next Problem"
-                  onPress={() => setProblem(generateProblem(selectedOp, digitCount))}
+                  onPress={() => {
+                    setProblem(generateProblem(selectedOp, digitCount));
+                    setShowAnswer(false);
+                  }}
                   variant="primary"
                 />
                 <CortexButton
@@ -210,8 +228,12 @@ export default function NetsScreen() {
 
               {/* ── DIGIT CONFIGURATION ── */}
               <Text style={styles.sectionTitle}>Digit Length ({digitCount} Digits)</Text>
-              <CortexCard style={styles.digitCard} padding={20}>
-                <View style={styles.digitRow}>
+              <CortexCard style={styles.digitCard} padding={16}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.digitRow}
+                >
                   {[2, 3, 4, 6, 8, 12, 16].map((num) => (
                     <Pressable
                       key={num}
@@ -223,7 +245,7 @@ export default function NetsScreen() {
                       </Text>
                     </Pressable>
                   ))}
-                </View>
+                </ScrollView>
               </CortexCard>
 
               {/* ── START PRACTICE CTA ── */}
@@ -357,11 +379,22 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     marginVertical: 12,
   },
+  revealBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#12251a',
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginBottom: 20,
+  },
   answerHint: {
     fontFamily: 'SpaceGrotesk_700Bold',
-    fontSize: 18,
+    fontSize: 14,
     color: colors.accent,
-    marginBottom: 20,
   },
   practiceActions: {
     width: '100%',
@@ -411,7 +444,8 @@ const styles = StyleSheet.create({
   },
   digitRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
   },
   digitPill: {
     paddingHorizontal: 10,
