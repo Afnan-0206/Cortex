@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useRouter, useSegments } from 'expo-router';
+import { useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { supabase } from '../supabase';
 import { useAuthStore } from '../../src/store/authStore';
 import { useUserStore } from '../../src/store/userStore';
@@ -8,19 +8,22 @@ export function useAuthGate() {
   const [isInitializing, setIsInitializing] = useState(true);
   const router = useRouter();
   const segments = useSegments();
-  
-  const { session, user, initializeAuth } = useAuthStore();
+  const rootNavigationState = useRootNavigationState();
+
+  const { session, initializeAuth } = useAuthStore();
   const { setLoggedInState, updateName } = useUserStore();
 
   useEffect(() => {
     let isMounted = true;
 
-    // Initial auth check
-    initializeAuth().finally(() => {
-      if (isMounted) setIsInitializing(false);
-    });
+    initializeAuth()
+      .catch((err) => {
+        console.error('Auth init failed:', err);
+      })
+      .finally(() => {
+        if (isMounted) setIsInitializing(false);
+      });
 
-    // Subscribe to auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
         if (!isMounted) return;
@@ -55,23 +58,22 @@ export function useAuthGate() {
 
   useEffect(() => {
     if (isInitializing) return;
+    if (!rootNavigationState?.key) return;
 
     const inAuthGroup = segments[0] === '(auth)';
     const inTabsGroup = segments[0] === '(tabs)';
 
     if (!session && inTabsGroup) {
-      // Redirect to login if unauthenticated and trying to access tabs
       router.replace('/(auth)/login');
     } else if (session && inAuthGroup) {
-      // Redirect to tabs if authenticated and sitting on login/auth
       router.replace('/(tabs)');
     }
-  }, [session, isInitializing, segments]);
+  }, [session, isInitializing, segments, rootNavigationState?.key]);
 
   return {
     isInitializing,
     session,
-    user,
     isAuthenticated: !!session,
   };
 }
+

@@ -47,7 +47,8 @@
         }
       ],
       "expo-web-browser",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-audio"
     ],
     "extra": {
       "router": {},
