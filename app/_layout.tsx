@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -27,18 +27,7 @@ import {
   SpaceGrotesk_600SemiBold,
 } from '@expo-google-fonts/space-grotesk';
 
-import { colors } from '../src/theme';
-import { useUserStore } from '../src/store/userStore';
-
-import { useAuthGate } from '../lib/hooks/useAuthGate';
-
 export default function RootLayout() {
-  const [ready, setReady] = useState(false);
-  useEffect(() => { setReady(true); }, []);
-  if (ready) {
-    useAuthGate();
-  }
-
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -55,12 +44,6 @@ export default function RootLayout() {
     SpaceGrotesk_700Bold,
     SpaceGrotesk_600SemiBold,
   });
-
-  const loadProfile = useUserStore((state) => state.loadProfile);
-
-  useEffect(() => {
-    loadProfile();
-  }, [loadProfile]);
 
   if (!fontsLoaded) {
     return (
@@ -92,3 +75,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
+

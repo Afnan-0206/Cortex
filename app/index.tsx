@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, StyleSheet, Pressable, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, {
@@ -18,10 +18,49 @@ import { useUserStore } from '../src/store/userStore';
 
 const { width } = Dimensions.get('window');
 
-export default function EntryLogoScreen() {
-  const router = useRouter();
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
 
-  // Animation values
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class CrashBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('App Startup Crash Caught:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorTitle}>Startup Error</Text>
+          <Text style={styles.errorMessage}>
+            {this.state.error?.message || 'An unexpected error occurred on app launch.'}
+          </Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function EntryLogoScreenContent() {
+  const router = useRouter();
+  const [startupError, setStartupError] = useState<string | null>(null);
+
+  // Animation values - hooks called unconditionally at top level
   const logoScale = useSharedValue(0.4);
   const logoOpacity = useSharedValue(0);
   const logoGlowScale = useSharedValue(0.8);
@@ -36,13 +75,19 @@ export default function EntryLogoScreen() {
       await useUserStore.getState().loadProfile();
       const { data: { session } } = await supabase.auth.getSession();
       const storeProfile = useUserStore.getState().profile;
-      if (session && storeProfile.isLoggedIn) {
+
+      if (session && storeProfile?.isLoggedIn) {
         router.replace('/(tabs)');
       } else {
         router.replace('/(auth)/login');
       }
-    } catch {
-      router.replace('/(auth)/login');
+    } catch (err: any) {
+      console.error('Startup check failed:', err);
+      try {
+        router.replace('/(auth)/login');
+      } catch (navError: any) {
+        setStartupError(navError?.message || err?.message || 'Failed to complete startup navigation.');
+      }
     }
   };
 
@@ -110,6 +155,15 @@ export default function EntryLogoScreen() {
     width: `${progressWidth.value * 100}%`,
   }));
 
+  if (startupError) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorTitle}>Startup Error</Text>
+        <Text style={styles.errorMessage}>{startupError}</Text>
+      </View>
+    );
+  }
+
   return (
     <Pressable style={styles.container} onPress={navigateNext}>
       {/* Background ambient lighting */}
@@ -149,6 +203,14 @@ export default function EntryLogoScreen() {
   );
 }
 
+export default function EntryLogoScreen() {
+  return (
+    <CrashBoundary>
+      <EntryLogoScreenContent />
+    </CrashBoundary>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -156,8 +218,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  // Ambient glows
+  errorContainer: {
+    flex: 1,
+    backgroundColor: '#06070A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#ef4444',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
   glowTop: {
     position: 'absolute',
     top: -100,
@@ -173,13 +253,11 @@ const styles = StyleSheet.create({
     borderRadius: 140,
     backgroundColor: 'rgba(99, 102, 241, 0.06)',
   },
-
   centerContent: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
-
   logoWrapper: {
     width: 120,
     height: 120,
@@ -188,7 +266,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     position: 'relative',
   },
-
   glowRing: {
     position: 'absolute',
     width: 110,
@@ -198,7 +275,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(132, 204, 22, 0.4)',
   },
-
   iconBadge: {
     width: 96,
     height: 96,
@@ -214,11 +290,9 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 8,
   },
-
   textWrapper: {
     alignItems: 'center',
   },
-
   brandTitle: {
     fontSize: 42,
     fontWeight: '900',
@@ -226,11 +300,9 @@ const styles = StyleSheet.create({
     letterSpacing: 8,
     textAlign: 'center',
   },
-
   taglineWrapper: {
     marginTop: 10,
   },
-
   taglineText: {
     fontSize: 16,
     fontWeight: '500',
@@ -238,7 +310,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textAlign: 'center',
   },
-
   bottomBar: {
     position: 'absolute',
     bottom: 50,
@@ -246,7 +317,6 @@ const styles = StyleSheet.create({
     width: width * 0.6,
     gap: 12,
   },
-
   progressTrack: {
     width: '100%',
     height: 3,
@@ -254,17 +324,16 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     overflow: 'hidden',
   },
-
   progressFill: {
     height: '100%',
     backgroundColor: '#84cc16',
     borderRadius: 2,
   },
-
   skipHint: {
     fontSize: 12,
     color: '#475569',
     fontWeight: '500',
   },
 });
+
 
