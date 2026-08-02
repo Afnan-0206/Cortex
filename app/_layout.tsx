@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -33,8 +33,12 @@ import { useUserStore } from '../src/store/userStore';
 import { useAuthGate } from '../lib/hooks/useAuthGate';
 
 export default function RootLayout() {
-  useAuthGate();
-  
+  const [ready, setReady] = useState(false);
+  useEffect(() => { setReady(true); }, []);
+  if (ready) {
+    useAuthGate();
+  }
+
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
