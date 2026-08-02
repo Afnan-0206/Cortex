@@ -27,6 +27,8 @@ import {
   SpaceGrotesk_600SemiBold,
 } from '@expo-google-fonts/space-grotesk';
 
+import { useAuthGate } from '../lib/hooks/useAuthGate';
+
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
@@ -44,6 +46,9 @@ export default function RootLayout() {
     SpaceGrotesk_700Bold,
     SpaceGrotesk_600SemiBold,
   });
+
+  useAuthGate();
+
 
   if (!fontsLoaded) {
     return (
