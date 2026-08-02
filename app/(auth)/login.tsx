@@ -41,6 +41,7 @@ import { useUserStore } from '@/src/store/userStore';
 
 const { height: H } = Dimensions.get('window');
 
+
 // ─────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────
@@ -52,11 +53,11 @@ function sanitize(str: string): string {
 }
 
 function friendlyAuthError(msg: string): string {
-  if (msg.includes('Invalid login'))    return 'Incorrect email or password.';
+  if (msg.includes('Invalid login')) return 'Incorrect email or password.';
   if (msg.includes('Email not confirmed')) return 'Please confirm your email first.';
   if (msg.includes('already registered')) return 'An account with this email already exists.';
-  if (msg.includes('rate limit'))       return 'Too many attempts. Please wait a moment.';
-  if (msg.includes('network'))          return 'No internet connection. Check your network.';
+  if (msg.includes('rate limit')) return 'Too many attempts. Please wait a moment.';
+  if (msg.includes('network')) return 'No internet connection. Check your network.';
   return 'Something went wrong. Please try again.';
 }
 
@@ -71,20 +72,20 @@ type AuthMode = 'welcome' | 'signin' | 'signup' | 'forgot';
 export default function LoginScreen() {
   const router = useRouter();
 
-  const [mode, setMode]         = useState<AuthMode>('welcome');
-  const [loading, setLoading]   = useState(false);
+  const [mode, setMode] = useState<AuthMode>('welcome');
+  const [loading, setLoading] = useState(false);
 
   // Form
-  const [fullName, setFullName]   = useState('');
-  const [email, setEmail]         = useState('');
-  const [password, setPassword]   = useState('');
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
 
   // Validation
-  const [nameErr, setNameErr]     = useState('');
-  const [emailErr, setEmailErr]   = useState('');
-  const [passErr, setPassErr]     = useState('');
+  const [nameErr, setNameErr] = useState('');
+  const [emailErr, setEmailErr] = useState('');
+  const [passErr, setPassErr] = useState('');
   const [globalErr, setGlobalErr] = useState('');
 
   const { setLoggedInState, updateName } = useUserStore();
@@ -95,37 +96,20 @@ export default function LoginScreen() {
   const switchMode = (next: AuthMode) => {
     Animated.sequence([
       Animated.timing(slideAnim, { toValue: 30, duration: 100, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 0,  duration: 180, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
     ]).start();
     setMode(next);
     setGlobalErr('');
     setNameErr(''); setEmailErr(''); setPassErr('');
   };
 
-  // ── Auth state listener ─────────────────────────────
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        if (!session?.user) return;
-        const u = session.user;
-        const name  = u.user_metadata?.full_name
-                   ?? u.user_metadata?.name
-                   ?? (u.email?.split('@')[0] ?? 'User');
-        const userEmail = u.email ?? '';
-        await updateName(name);
-        await setLoggedInState(true, userEmail, name);
-        router.replace('/(tabs)');
-      }
-    );
-    return () => subscription.unsubscribe();
-  }, []);
 
   // ── Sign-in ─────────────────────────────────────────
   const handleSignIn = async () => {
     setGlobalErr('');
     let ok = true;
     const cleanEmail = sanitize(email);
-    const cleanPass  = sanitize(password);
+    const cleanPass = sanitize(password);
 
     if (!cleanEmail || !EMAIL_RE.test(cleanEmail)) {
       setEmailErr('Enter a valid email address.'); ok = false;
@@ -164,9 +148,9 @@ export default function LoginScreen() {
   const handleSignUp = async () => {
     setGlobalErr('');
     let ok = true;
-    const cleanName  = sanitize(fullName);
+    const cleanName = sanitize(fullName);
     const cleanEmail = sanitize(email);
-    const cleanPass  = sanitize(password);
+    const cleanPass = sanitize(password);
 
     if (!cleanName) {
       setNameErr('Full name is required.'); ok = false;
@@ -333,7 +317,7 @@ export default function LoginScreen() {
                 <SocialAuthRow
                   dividerText="Quick sign up"
                   onGooglePress={handleGoogle}
-                  onApplePress={() => {}}
+                  onApplePress={() => { }}
                   disabled={loading}
                 />
 
@@ -429,7 +413,7 @@ export default function LoginScreen() {
                 <SocialAuthRow
                   dividerText="Quick sign in"
                   onGooglePress={handleGoogle}
-                  onApplePress={() => {}}
+                  onApplePress={() => { }}
                   disabled={loading}
                 />
 
@@ -601,8 +585,8 @@ function ErrorBanner({ msg }: { msg: string }) {
 
 // Simple password strength bar
 function PasswordStrength({ password }: { password: string }) {
-  const len  = password.length;
-  const has  = (re: RegExp) => re.test(password);
+  const len = password.length;
+  const has = (re: RegExp) => re.test(password);
   const score = [
     len >= 8,
     has(/[A-Z]/),
@@ -610,9 +594,9 @@ function PasswordStrength({ password }: { password: string }) {
     has(/[^A-Za-z0-9]/),
   ].filter(Boolean).length;
 
-  const label  = ['Weak', 'Fair', 'Good', 'Strong'][score - 1] ?? 'Too short';
+  const label = ['Weak', 'Fair', 'Good', 'Strong'][score - 1] ?? 'Too short';
   const colors = ['#EF4444', '#F59E0B', '#3B82F6', '#22C55E'];
-  const color  = colors[score - 1] ?? '#CBD5E1';
+  const color = colors[score - 1] ?? '#CBD5E1';
 
   return (
     <View style={styles.strengthRow}>
@@ -655,7 +639,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.8,
     marginBottom: 12,
     ...Platform.select({
-      web:    { textShadow: '0px 2px 6px rgba(0,0,0,0.3)' },
+      web: { textShadow: '0px 2px 6px rgba(0,0,0,0.3)' },
       default: {
         textShadowColor: 'rgba(0,0,0,0.3)',
         textShadowOffset: { width: 0, height: 2 },
@@ -699,7 +683,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...Platform.select({
-      web:    { boxShadow: '-6px -4px 14px rgba(0,0,0,0.20)' },
+      web: { boxShadow: '-6px -4px 14px rgba(0,0,0,0.20)' },
       default: {
         shadowColor: '#000',
         shadowOffset: { width: -6, height: -4 },
@@ -778,7 +762,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     ...Platform.select({
-      web:    { boxShadow: '0px 6px 12px rgba(43,82,224,0.32)' },
+      web: { boxShadow: '0px 6px 12px rgba(43,82,224,0.32)' },
       default: {
         shadowColor: '#2B52E0',
         shadowOffset: { width: 0, height: 6 },
