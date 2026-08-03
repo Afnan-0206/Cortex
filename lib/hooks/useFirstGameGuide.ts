@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
-import { useGuideStore, GuideStep } from '../../src/store/guideStore';
-import { useAuthStore } from '../../src/store/authStore';
+import { useGuideStore } from '../../src/store/guideStore';
+import { useUserStore } from '../../src/store/userStore';
 
 export function useFirstGameGuide() {
-  const { user } = useAuthStore();
+  const user = useUserStore((s) => s.user);
   const {
     isActive,
     currentStep,

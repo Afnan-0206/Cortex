@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UserProfile, SessionState, Rank } from '../types';
 import { getCurrentRank } from '../logic/ranks';
 import {
@@ -9,11 +8,12 @@ import {
   calculateConsistency,
 } from '../logic/scoring';
 import { supabase } from '../../lib/supabase';
+import { secureStorage } from '../../lib/secureStorage';
 
-const ASYNC_STORAGE_KEY = 'cortex_profile_v1';
+const ASYNC_STORAGE_KEY = 'cortex_profile_v2';
 
 export const DEFAULT_PROFILE: UserProfile = {
-  name: 'User',
+  name: 'Athlete',
   email: '',
   isLoggedIn: false,
   hasCustomUsername: false,
@@ -35,9 +35,29 @@ export const DEFAULT_PROFILE: UserProfile = {
   questPoints: 0,
   completedQuests: [],
   questProgress: {},
+  streakFreezes: 0,
+  lastFreezeGrantedStreak: 0,
+  dailyRewardCycleDay: 1,
+  lastDailyRewardClaimDate: null,
+  badges: [],
+  dailyMissions: [
+    { id: 'm_workout', title: 'Complete 1 Workout', target: 1, current: 0, rewardXp: 40, claimed: false, type: 'workout' },
+    { id: 'm_win_duel', title: 'Win 1 AI Duel', target: 1, current: 0, rewardXp: 40, claimed: false, type: 'win_duel' },
+    { id: 'm_earn_xp', title: 'Earn 200 XP', target: 200, current: 0, rewardXp: 40, claimed: false, type: 'earn_xp' },
+  ],
 };
 
-interface CompleteSessionResult {
+export const REWARDS_7_DAY = [
+  { day: 1, xp: 50 },
+  { day: 2, xp: 75 },
+  { day: 3, xp: 100 },
+  { day: 4, xp: 125 },
+  { day: 5, xp: 150 },
+  { day: 6, xp: 200 },
+  { day: 7, xp: 300, badge: '7-Day Master' },
+];
+
+export interface CompleteSessionResult {
   bpEarned: number;
   didRankUp: boolean;
   oldRank: Rank;
@@ -47,11 +67,23 @@ interface CompleteSessionResult {
   streak: number;
 }
 
-interface UserStore {
+export interface UserStore {
+  // Auth State
+  user: any | null;
+  session: any | null;
   profile: UserProfile;
-  session: SessionState | null;
+  activeSession: SessionState | null;
   isLoading: boolean;
+  themeMode: 'dark' | 'light';
 
+  // Auth Actions
+  initializeAuth: () => Promise<void>;
+  signInWithEmail: (email: string, pass: string) => Promise<{ error: any }>;
+  signUpWithEmail: (email: string, pass: string, username: string) => Promise<{ error: any }>;
+  signOut: () => Promise<void>;
+  setThemeMode: (mode: 'dark' | 'light') => void;
+
+  // Profile & Session Actions
   loadProfile: () => Promise<void>;
   startSession: () => void;
   recordMathResult: (correct: boolean) => void;
@@ -62,23 +94,94 @@ interface UserStore {
   setBP: (bp: number) => Promise<void>;
   incrementDailyProgress: (amount?: number) => Promise<void>;
   claimDailyReward: () => Promise<{ xpEarned: number }>;
+  claim7DayReward: () => Promise<{ xpAwarded: number; badgeUnlocked?: string }>;
+  updateMissionProgress: (type: 'workout' | 'win_duel' | 'earn_xp', amount?: number) => Promise<void>;
+  claimMissionReward: (missionId: string) => Promise<{ xpAwarded: number }>;
   completeQuest: (questId: string) => Promise<void>;
   updateQuestProgress: (questId: string, progress: number) => Promise<void>;
   incrementStreak: () => Promise<void>;
+  grantFreezeIfEligible: () => Promise<boolean>;
+  consumeFreezeIfNeeded: () => Promise<boolean>;
+  getAvailableFreezes: () => number;
   updateName: (newName: string) => Promise<void>;
   setLoggedInState: (isLoggedIn: boolean, email?: string, name?: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 export const useUserStore = create<UserStore>((set, get) => ({
-  profile: DEFAULT_PROFILE,
+  user: null,
   session: null,
+  profile: DEFAULT_PROFILE,
+  activeSession: null,
   isLoading: true,
+  themeMode: 'dark',
+
+  initializeAuth: async () => {
+    set({ isLoading: true });
+    try {
+      const { data } = await supabase.auth.getSession();
+      const session = data?.session;
+      if (session && session.user) {
+        set({ session, user: session.user });
+        await get().loadProfile();
+      } else {
+        await get().loadProfile();
+      }
+    } catch (e) {
+      console.warn('Auth initialization error:', e);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  signInWithEmail: async (email, password) => {
+    const res = await supabase.auth.signInWithPassword({ email, password });
+    const data = res?.data;
+    const error = res?.error;
+    if (!error && data?.session) {
+      set({ session: data.session, user: data.session.user });
+      await get().initializeAuth();
+    }
+    return { error };
+  },
+
+  signUpWithEmail: async (email, password, username) => {
+    const res = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { username } },
+    });
+    const data = res?.data;
+    const error = res?.error;
+    if (!error && data?.session) {
+      set({ session: data.session, user: data.session.user });
+      await supabase.from('profiles').insert({
+        id: data.session.user.id,
+        username,
+        rating: 1200,
+      });
+      await get().initializeAuth();
+    }
+    return { error };
+  },
+
+  signOut: async () => {
+    try {
+      await supabase.removeAllChannels();
+      await supabase.auth.signOut();
+    } catch {
+      // silent fallback
+    }
+    set({ user: null, session: null, profile: DEFAULT_PROFILE, activeSession: null });
+    await secureStorage.removeItem(ASYNC_STORAGE_KEY).catch(() => {});
+  },
+
+  setThemeMode: (mode) => set({ themeMode: mode }),
 
   loadProfile: async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const jsonStr = await AsyncStorage.getItem(ASYNC_STORAGE_KEY);
+      const jsonStr = await secureStorage.getItem(ASYNC_STORAGE_KEY);
       const todayStr = new Date().toISOString().split('T')[0];
 
       const isAuthenticated = !!session;
@@ -106,94 +209,40 @@ export const useUserStore = create<UserStore>((set, get) => ({
         dbDailyProgress?.is_completed === true ||
         dbProfileData?.last_daily_completed_date === todayStr;
 
+      let baseProfile = DEFAULT_PROFILE;
       if (jsonStr) {
-        const parsed: UserProfile = JSON.parse(jsonStr);
-
-        // Purge legacy mock data if present
-        if (parsed.totalSessionsCompleted === 248 || parsed.brainPoints === 1420 || parsed.streak === 17) {
-          await AsyncStorage.removeItem(ASYNC_STORAGE_KEY);
-          set({
-            profile: {
-              ...DEFAULT_PROFILE,
-              isLoggedIn: isAuthenticated,
-              name: dbProfileData?.username || 'Athlete',
-              brainPoints: Math.max(dbProfileData?.xp ?? 0, dbProfileData?.rating ?? 0),
-              streak: dbProfileData?.streak ?? 0,
-              longestStreak: dbProfileData?.best_streak ?? 0,
-              coins: dbProfileData?.coins ?? 0,
-              dailyProgress: isTodayDone ? 4 : (dbDailyProgress?.completed_sections ?? 0),
-              dailyRewardClaimed: isTodayDone,
-              first_game_completed: dbProfileData?.first_game_completed ?? false,
-              lastCompletedDate: isTodayDone ? todayStr : (dbProfileData?.last_daily_completed_date || ''),
-            },
-            isLoading: false,
-          });
-          return;
+        try {
+          baseProfile = JSON.parse(jsonStr);
+        } catch {
+          baseProfile = DEFAULT_PROFILE;
         }
-
-        const isFullyDoneToday =
-          isTodayDone ||
-          (parsed.lastCompletedDate === todayStr && (parsed.dailyRewardClaimed === true || parsed.dailyProgress === 4));
-
-        const dailyProgress = isFullyDoneToday
-          ? 4
-          : Math.max(
-              dbDailyProgress?.completed_sections ?? 0,
-              parsed.lastCompletedDate === todayStr ? (parsed.dailyProgress ?? 0) : 0
-            );
-
-        const dailyRewardClaimed = isFullyDoneToday;
-
-        let completedQuests = parsed.completedQuests ?? [];
-        if (parsed.lastCompletedDate && parsed.lastCompletedDate !== todayStr && !isFullyDoneToday && !dbDailyProgress) {
-          completedQuests = [];
-        }
-
-        const finalXP = Math.max(dbProfileData?.xp ?? 0, dbProfileData?.rating ?? 0, parsed.brainPoints ?? 0);
-        const finalCoins = Math.max(dbProfileData?.coins ?? 0, parsed.coins ?? 0);
-        const finalStreak = Math.max(dbProfileData?.streak ?? 0, parsed.streak ?? 0);
-        const finalBestStreak = Math.max(dbProfileData?.best_streak ?? 0, parsed.longestStreak ?? 0, finalStreak);
-
-        const mergedProfile: UserProfile = {
-          ...DEFAULT_PROFILE,
-          ...parsed,
-          isLoggedIn: isAuthenticated,
-          name: dbProfileData?.username || parsed.name || 'Athlete',
-          brainPoints: finalXP,
-          streak: finalStreak,
-          longestStreak: finalBestStreak,
-          coins: finalCoins,
-          dailyProgress,
-          dailyRewardClaimed,
-          completedQuests,
-          first_game_completed: dbProfileData?.first_game_completed ?? parsed.first_game_completed ?? false,
-          lastCompletedDate: isFullyDoneToday ? todayStr : (dbProfileData?.last_daily_completed_date || parsed.lastCompletedDate || ''),
-        };
-
-        set({ profile: mergedProfile, isLoading: false });
-        AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(mergedProfile)).catch(() => {});
-      } else {
-        const finalXP = Math.max(dbProfileData?.xp ?? 0, dbProfileData?.rating ?? 0);
-        const finalCoins = dbProfileData?.coins ?? 0;
-        const finalStreak = dbProfileData?.streak ?? 0;
-        const finalBestStreak = Math.max(dbProfileData?.best_streak ?? 0, finalStreak);
-
-        const mergedProfile: UserProfile = {
-          ...DEFAULT_PROFILE,
-          isLoggedIn: isAuthenticated,
-          name: dbProfileData?.username || 'Athlete',
-          brainPoints: finalXP,
-          streak: finalStreak,
-          longestStreak: finalBestStreak,
-          coins: finalCoins,
-          dailyProgress: isTodayDone ? 4 : (dbDailyProgress?.completed_sections ?? 0),
-          dailyRewardClaimed: isTodayDone,
-          first_game_completed: dbProfileData?.first_game_completed ?? false,
-          lastCompletedDate: isTodayDone ? todayStr : (dbProfileData?.last_daily_completed_date || ''),
-        };
-        set({ profile: mergedProfile, isLoading: false });
-        AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(mergedProfile)).catch(() => {});
       }
+
+      const finalXP = Math.max(dbProfileData?.xp ?? 0, dbProfileData?.rating ?? 0, baseProfile.brainPoints ?? 0);
+      const finalCoins = Math.max(dbProfileData?.coins ?? 0, baseProfile.coins ?? 0);
+      const finalStreak = Math.max(dbProfileData?.streak ?? 0, baseProfile.streak ?? 0);
+      const finalBestStreak = Math.max(dbProfileData?.best_streak ?? 0, baseProfile.longestStreak ?? 0, finalStreak);
+
+      const mergedProfile: UserProfile = {
+        ...DEFAULT_PROFILE,
+        ...baseProfile,
+        isLoggedIn: isAuthenticated,
+        name: dbProfileData?.username || baseProfile.name || 'Athlete',
+        brainPoints: finalXP,
+        streak: finalStreak,
+        longestStreak: finalBestStreak,
+        coins: finalCoins,
+        dailyProgress: isTodayDone ? 4 : Math.max(dbDailyProgress?.completed_sections ?? 0, baseProfile.dailyProgress ?? 0),
+        dailyRewardClaimed: isTodayDone || (baseProfile.dailyRewardClaimed ?? false),
+        first_game_completed: dbProfileData?.first_game_completed ?? baseProfile.first_game_completed ?? false,
+        streakFreezes: baseProfile.streakFreezes ?? 0,
+        lastFreezeGrantedStreak: baseProfile.lastFreezeGrantedStreak ?? 0,
+      };
+
+      set({ profile: mergedProfile, isLoading: false });
+      await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(mergedProfile)).catch(() => {});
+      await get().consumeFreezeIfNeeded();
+      await get().grantFreezeIfEligible();
     } catch {
       set({ profile: DEFAULT_PROFILE, isLoading: false });
     }
@@ -201,7 +250,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
 
   startSession: () => {
     set({
-      session: {
+      activeSession: {
         startedAt: Date.now(),
         mathCorrect: 0,
         mathTotal: 0,
@@ -215,12 +264,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
 
   recordMathResult: (correct: boolean) => {
     set((state) => {
-      if (!state.session) return state;
+      if (!state.activeSession) return state;
       return {
-        session: {
-          ...state.session,
-          mathCorrect: state.session.mathCorrect + (correct ? 1 : 0),
-          mathTotal: state.session.mathTotal + 1,
+        activeSession: {
+          ...state.activeSession,
+          mathCorrect: state.activeSession.mathCorrect + (correct ? 1 : 0),
+          mathTotal: state.activeSession.mathTotal + 1,
         },
       };
     });
@@ -228,12 +277,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
 
   recordLogicResult: (correct: boolean) => {
     set((state) => {
-      if (!state.session) return state;
+      if (!state.activeSession) return state;
       return {
-        session: {
-          ...state.session,
-          logicCorrect: state.session.logicCorrect + (correct ? 1 : 0),
-          logicTotal: state.session.logicTotal + 1,
+        activeSession: {
+          ...state.activeSession,
+          logicCorrect: state.activeSession.logicCorrect + (correct ? 1 : 0),
+          logicTotal: state.activeSession.logicTotal + 1,
         },
       };
     });
@@ -241,19 +290,19 @@ export const useUserStore = create<UserStore>((set, get) => ({
 
   recordMemorySpan: (span: number) => {
     set((state) => {
-      if (!state.session) return state;
+      if (!state.activeSession) return state;
       return {
-        session: {
-          ...state.session,
-          memorySpan: Math.max(state.session.memorySpan, span),
+        activeSession: {
+          ...state.activeSession,
+          memorySpan: Math.max(state.activeSession.memorySpan, span),
         },
       };
     });
   },
 
   completeSession: async () => {
-    const { profile, session } = get();
-    const currentSession = session || {
+    const { profile, activeSession } = get();
+    const currentSession = activeSession || {
       startedAt: Date.now(),
       mathCorrect: 0,
       mathTotal: 0,
@@ -271,7 +320,6 @@ export const useUserStore = create<UserStore>((set, get) => ({
     const newRank = getCurrentRank(newBP);
     const didRankUp = newRank.tier > oldRank.tier;
 
-    // Streak calculation
     let newStreak = profile.streak;
     const todayStr = new Date().toISOString().split('T')[0];
 
@@ -286,7 +334,6 @@ export const useUserStore = create<UserStore>((set, get) => ({
     const newLongestStreak = Math.max(profile.longestStreak, newStreak);
     const newTotalSessions = profile.totalSessionsCompleted + 1;
 
-    // Performance metric updates
     const sessionMathAccuracy =
       currentSession.mathTotal > 0
         ? currentSession.mathCorrect / currentSession.mathTotal
@@ -331,8 +378,6 @@ export const useUserStore = create<UserStore>((set, get) => ({
       currentSession.logicCorrect === currentSession.logicTotal;
 
     const updatedPerfectRuns = profile.perfectRuns + (isPerfect ? 1 : 0);
-
-    // Auto increment daily challenge progress
     const updatedDailyProgress = Math.min(6, (profile.dailyProgress ?? 0) + 1);
 
     const draftProfile: UserProfile = {
@@ -358,24 +403,29 @@ export const useUserStore = create<UserStore>((set, get) => ({
     const newScore = calculateCortexScore(draftProfile);
     draftProfile.cortexScore = newScore;
 
-    set({ profile: draftProfile, session: null });
+    set({ profile: draftProfile, activeSession: null });
 
     try {
-      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(draftProfile));
+      await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(draftProfile));
+      
+      // Execute Server-Authoritative RPC (Phase 6 Security Fix)
       const { data: { session: currentAuthSession } } = await supabase.auth.getSession();
       if (currentAuthSession?.user) {
-        await supabase
-          .from('profiles')
-          .update({
-            rating: draftProfile.brainPoints,
-            xp: draftProfile.brainPoints,
-            streak: draftProfile.streak,
-            best_streak: draftProfile.longestStreak,
-          })
-          .eq('id', currentAuthSession.user.id);
+        void (async () => {
+          try {
+            await supabase.rpc('submit_match_result', {
+              p_match_id: `session_${Date.now()}`,
+              p_score: currentSession.mathCorrect + currentSession.logicCorrect,
+              p_opponent_id: 'solo',
+              p_is_winner: true,
+            });
+          } catch {
+            // silent fallback
+          }
+        })();
       }
     } catch {
-      // silent
+      // silent fallback
     }
 
     return {
@@ -390,18 +440,14 @@ export const useUserStore = create<UserStore>((set, get) => ({
   },
 
   resetProfile: async () => {
-    set({ profile: DEFAULT_PROFILE, session: null });
-    try {
-      await AsyncStorage.removeItem(ASYNC_STORAGE_KEY);
-    } catch {
-      // silent
-    }
+    set({ profile: DEFAULT_PROFILE, activeSession: null });
+    await secureStorage.removeItem(ASYNC_STORAGE_KEY).catch(() => {});
   },
 
   setBP: async (bp: number) => {
     set((state) => {
       const updated = { ...state.profile, brainPoints: bp };
-      AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updated)).catch(() => {});
+      secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updated)).catch(() => {});
       return { profile: updated };
     });
   },
@@ -410,7 +456,6 @@ export const useUserStore = create<UserStore>((set, get) => ({
     const { profile } = get();
     const todayStr = new Date().toISOString().split('T')[0];
 
-    // If today's workout is already completed or locked in, do not mutate dailyProgress!
     if (profile.dailyProgress === 4 || profile.dailyRewardClaimed || profile.lastCompletedDate === todayStr) {
       return;
     }
@@ -425,12 +470,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     };
 
     set({ profile: updatedProfile });
-
-    try {
-      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile));
-    } catch {
-      // silent fallback
-    }
+    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
   },
 
   claimDailyReward: async () => {
@@ -448,12 +488,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     };
 
     set({ profile: updatedProfile });
-
-    try {
-      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile));
-    } catch {
-      // silent fallback
-    }
+    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
 
     return { xpEarned };
   },
@@ -485,12 +520,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     };
 
     set({ profile: updatedProfile });
-
-    try {
-      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile));
-    } catch {
-      // silent fallback
-    }
+    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
   },
 
   updateQuestProgress: async (questId: string, progress: number) => {
@@ -504,11 +534,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     };
 
     set({ profile: updatedProfile });
-    try {
-      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile));
-    } catch {
-      // silent fallback
-    }
+    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
   },
 
   incrementStreak: async () => {
@@ -528,11 +554,160 @@ export const useUserStore = create<UserStore>((set, get) => ({
     };
 
     set({ profile: updatedProfile });
-    try {
-      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile));
-    } catch {
-      // silent fallback
+    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+  },
+
+  grantFreezeIfEligible: async () => {
+    const { profile } = get();
+    const streak = profile.streak || 0;
+    if (streak < 7) return false;
+
+    const milestone = Math.floor(streak / 7) * 7;
+    const currentFreezes = profile.streakFreezes ?? 0;
+    const lastGranted = profile.lastFreezeGrantedStreak ?? 0;
+
+    if (milestone > lastGranted && currentFreezes < 2) {
+      const updatedProfile: UserProfile = {
+        ...profile,
+        streakFreezes: Math.min(2, currentFreezes + 1),
+        lastFreezeGrantedStreak: milestone,
+      };
+      set({ profile: updatedProfile });
+      await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+      return true;
     }
+    return false;
+  },
+
+  consumeFreezeIfNeeded: async () => {
+    const { profile } = get();
+    const currentFreezes = profile.streakFreezes ?? 0;
+    if (currentFreezes <= 0 || profile.streak <= 0 || !profile.lastCompletedDate) {
+      return false;
+    }
+
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const yesterday = new Date(Date.now() - 86400000);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    const last = profile.lastCompletedDate;
+    if (last !== todayStr && last !== yesterdayStr) {
+      // Missed more than 1 day - consume a freeze to preserve streak!
+      const updatedProfile: UserProfile = {
+        ...profile,
+        streakFreezes: Math.max(0, currentFreezes - 1),
+        lastCompletedDate: yesterdayStr, // set to yesterday so streak continues
+      };
+      set({ profile: updatedProfile });
+      await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+      return true;
+    }
+    return false;
+  },
+
+  getAvailableFreezes: () => {
+    return get().profile.streakFreezes ?? 0;
+  },
+
+  claim7DayReward: async () => {
+    const { profile } = get();
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    if (profile.lastDailyRewardClaimDate === todayStr) {
+      return { xpAwarded: 0 };
+    }
+
+    const yesterdayStr = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    let nextDay = profile.dailyRewardCycleDay ?? 1;
+
+    if (profile.lastDailyRewardClaimDate === yesterdayStr) {
+      nextDay = nextDay >= 7 ? 1 : nextDay + 1;
+    } else if (profile.lastDailyRewardClaimDate) {
+      nextDay = 1; // Missed day resets reward cycle
+    }
+
+    const rewardConfig = REWARDS_7_DAY.find((r) => r.day === nextDay) || REWARDS_7_DAY[0];
+    const xpAwarded = rewardConfig.xp;
+    const badgeUnlocked = rewardConfig.badge;
+
+    const updatedBadges = badgeUnlocked
+      ? Array.from(new Set([...(profile.badges || []), badgeUnlocked]))
+      : profile.badges || [];
+
+    const updatedProfile: UserProfile = {
+      ...profile,
+      brainPoints: (profile.brainPoints || 0) + xpAwarded,
+      dailyRewardCycleDay: nextDay,
+      lastDailyRewardClaimDate: todayStr,
+      badges: updatedBadges,
+    };
+
+    set({ profile: updatedProfile });
+    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+
+    // Track analytics event
+    try {
+      const { analytics } = require('../../lib/analytics');
+      analytics.track('reward_claimed', { day: nextDay, xpAwarded, badgeUnlocked });
+    } catch {}
+
+    return { xpAwarded, badgeUnlocked };
+  },
+
+  updateMissionProgress: async (type: 'workout' | 'win_duel' | 'earn_xp', amount = 1) => {
+    const { profile } = get();
+    const currentMissions = profile.dailyMissions || [
+      { id: 'm_workout', title: 'Complete 1 Workout', target: 1, current: 0, rewardXp: 40, claimed: false, type: 'workout' },
+      { id: 'm_win_duel', title: 'Win 1 AI Duel', target: 1, current: 0, rewardXp: 40, claimed: false, type: 'win_duel' },
+      { id: 'm_earn_xp', title: 'Earn 200 XP', target: 200, current: 0, rewardXp: 40, claimed: false, type: 'earn_xp' },
+    ];
+
+    const updatedMissions = currentMissions.map((m) => {
+      if (m.type === type && !m.claimed) {
+        return { ...m, current: Math.min(m.target, m.current + amount) };
+      }
+      return m;
+    });
+
+    const updatedProfile: UserProfile = {
+      ...profile,
+      dailyMissions: updatedMissions,
+    };
+
+    set({ profile: updatedProfile });
+    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+  },
+
+  claimMissionReward: async (missionId: string) => {
+    const { profile } = get();
+    const currentMissions = profile.dailyMissions || [];
+    const targetMission = currentMissions.find((m) => m.id === missionId);
+
+    if (!targetMission || targetMission.claimed || targetMission.current < targetMission.target) {
+      return { xpAwarded: 0 };
+    }
+
+    const xpAwarded = targetMission.rewardXp;
+    const updatedMissions = currentMissions.map((m) =>
+      m.id === missionId ? { ...m, claimed: true } : m
+    );
+
+    const updatedProfile: UserProfile = {
+      ...profile,
+      brainPoints: (profile.brainPoints || 0) + xpAwarded,
+      dailyMissions: updatedMissions,
+    };
+
+    set({ profile: updatedProfile });
+    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+
+    try {
+      const { analytics } = require('../../lib/analytics');
+      analytics.track('reward_claimed', { missionId, xpAwarded });
+    } catch {}
+
+    return { xpAwarded };
   },
 
   updateName: async (newName: string) => {
@@ -547,11 +722,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     };
 
     set({ profile: updatedProfile });
-    try {
-      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile));
-    } catch {
-      // silent fallback
-    }
+    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
   },
 
   setLoggedInState: async (isLoggedIn: boolean, email?: string, name?: string) => {
@@ -560,15 +731,11 @@ export const useUserStore = create<UserStore>((set, get) => ({
       ...profile,
       isLoggedIn,
       email: email || profile.email || '',
-      name: name || profile.name || 'Afnan',
+      name: name || profile.name || 'Athlete',
     };
 
     set({ profile: updatedProfile });
-    try {
-      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile));
-    } catch {
-      // silent fallback
-    }
+    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
   },
 
   logout: async () => {
@@ -578,17 +745,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
     } catch {
       // silent fallback
     }
-    const { profile } = get();
     const updatedProfile: UserProfile = {
       ...DEFAULT_PROFILE,
       isLoggedIn: false,
       email: '',
     };
-    set({ profile: updatedProfile, session: null });
-    try {
-      await AsyncStorage.removeItem(ASYNC_STORAGE_KEY);
-    } catch {
-      // silent fallback
-    }
+    set({ user: null, session: null, profile: updatedProfile, activeSession: null });
+    await secureStorage.removeItem(ASYNC_STORAGE_KEY).catch(() => {});
   },
 }));

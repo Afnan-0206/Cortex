@@ -139,13 +139,6 @@ export default function TabsLayout() {
 
       {/* Hidden secondary tabs */}
       <Tabs.Screen
-        name="battle"
-        options={{
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
         name="leaderboard"
         options={{
           href: null,

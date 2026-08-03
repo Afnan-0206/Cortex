@@ -12,8 +12,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import * as Haptics from 'expo-haptics';
-import * as Location from 'expo-location';
-import * as Contacts from 'expo-contacts';
 import Animated, {
   FadeInDown,
   FadeInUp,
@@ -106,20 +104,7 @@ export default function FastAndFirstBattleScreen() {
   const [countdownNum, setCountdownNum] = useState(3);
   const [permissionGranted, setPermissionGranted] = useState(false);
 
-  // Auto Request Permissions on Screen Mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const locationRes = await Location.requestForegroundPermissionsAsync();
-        const contactsRes = await Contacts.requestPermissionsAsync();
-        if (locationRes.status === 'granted' && contactsRes.status === 'granted') {
-          setPermissionGranted(true);
-        }
-      } catch {
-        setPermissionGranted(true);
-      }
-    })();
-  }, []);
+
 
   // Fast & First Match States (5 Rounds)
   const [currentRound, setCurrentRound] = useState(0); // 0 to 4

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
-import { useAuthStore } from '../../src/store/authStore';
 import { useUserStore } from '../../src/store/userStore';
 import { setupStreakReminder, cancelStreakReminders } from '../notifications';
 
@@ -12,7 +11,7 @@ export interface UserSettings {
 }
 
 export function useSettings() {
-  const { user } = useAuthStore();
+  const user = useUserStore((s) => s.user);
   const { profile: userProfile, updateName } = useUserStore();
   const [settings, setSettings] = useState<UserSettings>({
     notificationsEnabled: true,

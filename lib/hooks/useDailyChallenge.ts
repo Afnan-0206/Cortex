@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 import { useDailyChallengeStore } from '../../src/store/dailyChallengeStore';
-import { useAuthStore } from '../../src/store/authStore';
+import { useUserStore } from '../../src/store/userStore';
 
 export function useDailyChallenge() {
-  const { user } = useAuthStore();
+  const user = useUserStore((s) => s.user);
   const {
     dateStr,
     sections,

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { supabase } from '../supabase';
-import { useAuthStore } from '../../src/store/authStore';
 import { useUserStore } from '../../src/store/userStore';
 
 export interface PresencePayload {
@@ -12,7 +11,7 @@ export interface PresencePayload {
 }
 
 export function usePresence() {
-  const { user } = useAuthStore();
+  const user = useUserStore((s) => s.user);
   const userProfile = useUserStore((s) => s.profile);
   const [onlineUsers, setOnlineUsers] = useState<PresencePayload[]>([]);
 

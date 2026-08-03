@@ -30,6 +30,22 @@ export interface UserProfile {
   questProgress: Record<string, number>; // per-quest completed questions count (0-20)
   first_game_completed?: boolean;
   coins?: number;
+  streakFreezes?: number;
+  lastFreezeGrantedStreak?: number;
+  dailyRewardCycleDay?: number;
+  lastDailyRewardClaimDate?: string | null;
+  badges?: string[];
+  dailyMissions?: DailyMission[];
+}
+
+export interface DailyMission {
+  id: string;
+  title: string;
+  target: number;
+  current: number;
+  rewardXp: number;
+  claimed: boolean;
+  type: 'workout' | 'win_duel' | 'earn_xp';
 }
 
 export interface SessionState {

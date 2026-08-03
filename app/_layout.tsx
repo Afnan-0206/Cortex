@@ -14,10 +14,6 @@ import {
 } from '@expo-google-fonts/inter';
 import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import {
-  PlayfairDisplay_700Bold,
-  PlayfairDisplay_900Black,
-} from '@expo-google-fonts/playfair-display';
-import {
   Outfit_700Bold,
   Outfit_800ExtraBold,
   Outfit_900Black,
@@ -28,6 +24,7 @@ import {
 } from '@expo-google-fonts/space-grotesk';
 
 import { useAuthGate } from '../lib/hooks/useAuthGate';
+import { ErrorBoundary } from '../src/components/ErrorBoundary';
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -38,8 +35,6 @@ export default function RootLayout() {
     Inter_800ExtraBold,
     Inter_900Black,
     BebasNeue_400Regular,
-    PlayfairDisplay_700Bold,
-    PlayfairDisplay_900Black,
     Outfit_700Bold,
     Outfit_800ExtraBold,
     Outfit_900Black,
@@ -48,7 +43,6 @@ export default function RootLayout() {
   });
 
   useAuthGate();
-
 
   if (!fontsLoaded) {
     return (
@@ -59,16 +53,18 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style="light" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: '#0d0e12' },
-          animation: 'fade',
-        }}
-      />
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <StatusBar style="light" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: '#0d0e12' },
+            animation: 'fade',
+          }}
+        />
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
 
@@ -80,4 +76,3 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
-

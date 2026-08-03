@@ -1,485 +1,353 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  Modal,
-  ActivityIndicator,
-  ScrollView,
-} from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import * as Location from 'expo-location';
-import * as Contacts from 'expo-contacts';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Animated, {
-  FadeInDown,
-  FadeInUp,
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
-  withRepeat,
   withTiming,
-  Easing,
+  withRepeat,
+  withSequence,
 } from 'react-native-reanimated';
+
+import { colors } from '../src/theme';
+import { useBattleStore } from '../src/store/battleStore';
 import { useUserStore } from '../src/store/userStore';
+import { CortexCard } from '../src/components/CortexCard';
+import { CortexButton } from '../src/components/CortexButton';
+import { ProgressBar } from '../src/components/ProgressBar';
+import { CortexVictoryDefeatView } from '../src/components/CortexVictoryDefeatView';
+import { CortexHowToPlayButton } from '../src/components/CortexHowToPlayButton';
+import { CortexTutorialModal } from '../src/components/CortexTutorialModal';
+import { TUTORIAL_CONFIGS } from '../src/logic/tutorialConfigs';
 
-type GamePhase = 'lobby' | 'matchmaking' | 'playing' | 'results';
+export default function BattleScreen() {
+  const router = useRouter();
+  const battle = useBattleStore();
+  const [userInput, setUserInput] = useState<string>('');
+  const [inputErrorFlash, setInputErrorFlash] = useState<boolean>(false);
+  const [inputSuccessFlash, setInputSuccessFlash] = useState<boolean>(false);
+  const [showTutorial, setShowTutorial] = useState<boolean>(false);
 
-interface FastFirstQuestion {
-  expr: string;
-  answer: number;
-  options: number[];
-}
+  const currentQ = battle.questions[battle.currentQuestionIndex] || battle.questions[0];
 
-// Pre-defined 5-round question sets for Fast & First Duels
-const FAST_FIRST_SET: FastFirstQuestion[] = [
-  { expr: '27 + 18', answer: 45, options: [45, 46, 35, 55] },
-  { expr: '63 − 29', answer: 34, options: [34, 44, 36, 24] },
-  { expr: '9 × 8', answer: 72, options: [72, 81, 63, 79] },
-  { expr: '144 ÷ 12', answer: 12, options: [12, 14, 16, 18] },
-  { expr: '(12 × 3) − 8', answer: 28, options: [28, 32, 26, 30] },
-];
+  // Progressive Urgency Pulse Anim for timer
+  const timerPulseScale = useSharedValue(1);
 
-// Reusable Spring Pressable Component
-interface ScalePressableProps {
-  onPress: () => void;
-  disabled?: boolean;
-  style?: any;
-  containerStyle?: any;
-  children: React.ReactNode;
-}
+  // Active game timer countdown effect (60s duel)
+  useEffect(() => {
+    if (battle.status !== 'playing') return;
 
-const ScalePressable: React.FC<ScalePressableProps> = ({
-  onPress,
-  disabled,
-  style,
-  containerStyle,
-  children,
-}) => {
-  const scale = useSharedValue(1);
+    const interval = setInterval(() => {
+      battle.tickTimer();
+    }, 1000);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
+    return () => clearInterval(interval);
+  }, [battle.status]);
+
+  useEffect(() => {
+    if (battle.status === 'playing' && battle.timeLeft <= 10) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      timerPulseScale.value = withRepeat(
+        withSequence(
+          withTiming(1.15, { duration: 250 }),
+          withTiming(1.0, { duration: 250 })
+        ),
+        -1,
+        true
+      );
+    } else {
+      timerPulseScale.value = 1;
+    }
+  }, [battle.timeLeft, battle.status]);
+
+  const animatedTimerStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: timerPulseScale.value }],
   }));
 
-  return (
-    <Pressable
-      style={containerStyle}
-      disabled={disabled}
-      onPressIn={() => {
-        if (!disabled) scale.value = withSpring(0.95, { damping: 14, stiffness: 220 });
-      }}
-      onPressOut={() => {
-        if (!disabled) scale.value = withSpring(1.0, { damping: 12, stiffness: 180 });
-      }}
-      onPress={onPress}
-    >
-      <Animated.View style={[style, animatedStyle]}>{children}</Animated.View>
-    </Pressable>
-  );
-};
+  // Handle Numeric Keypad Input (0-9, Backspace, Submit)
+  const handleKeypadPress = (key: string) => {
+    if (battle.status !== 'playing') return;
 
-export default function FastAndFirstBattleScreen() {
-  const router = useRouter();
-  const params = useLocalSearchParams<{ title?: string; subtitle?: string }>();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
-  const profile = useUserStore((state) => state.profile);
-  const incrementStreak = useUserStore((state) => state.incrementStreak);
-  const incrementDailyProgress = useUserStore((state) => state.incrementDailyProgress);
+    if (key === '⌫') {
+      setUserInput((prev) => prev.slice(0, -1));
+      return;
+    }
 
-  const [phase, setPhase] = useState<GamePhase>('lobby');
+    if (key === '±') {
+      setUserInput((prev) => (prev.startsWith('-') ? prev.slice(1) : prev ? '-' + prev : '-'));
+      return;
+    }
 
-  // Matchmaking Radar States
-  const [matchStatus, setMatchStatus] = useState<'requesting' | 'scanning' | 'found' | 'countdown'>('requesting');
-  const [matchStatusText, setMatchStatusText] = useState('Requesting Location & Contacts permission...');
-  const [matchedRival, setMatchedRival] = useState<{ name: string; distance: string; elo: number }>({
-    name: 'Riya',
-    distance: '1.2 km away',
-    elo: 1452,
-  });
-  const [countdownNum, setCountdownNum] = useState(3);
-  const [permissionGranted, setPermissionGranted] = useState(false);
-
-  // Auto Request Permissions on Screen Mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const locationRes = await Location.requestForegroundPermissionsAsync();
-        const contactsRes = await Contacts.requestPermissionsAsync();
-        if (locationRes.status === 'granted' && contactsRes.status === 'granted') {
-          setPermissionGranted(true);
-        }
-      } catch {
-        setPermissionGranted(true);
-      }
-    })();
-  }, []);
-
-  // Fast & First Match States (5 Rounds)
-  const [currentRound, setCurrentRound] = useState(0); // 0 to 4
-  const [userScore, setUserScore] = useState(0);
-  const [rivalScore, setRivalScore] = useState(0);
-  const [roundTimer, setRoundTimer] = useState(7);
-
-  // Round Feedback States
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [roundFeedback, setRoundFeedback] = useState<'first' | 'too_late' | 'wrong' | null>(null);
-  const [isLockedOut, setIsLockedOut] = useState(false);
-  const [lockoutSeconds, setLockoutSeconds] = useState(0);
-
-  const currentQ = FAST_FIRST_SET[currentRound] || FAST_FIRST_SET[0];
-
-  // Unlock condition: 3 daily sessions completed
-  const isUnlocked = (profile.totalSessionsCompleted || 0) >= 0; // Allow playing for demo/testing
-
-  // Launch Matchmaking
-  const handleStartMatchmaking = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    setPhase('matchmaking');
-    setMatchStatus('requesting');
-    setMatchStatusText('Finding near player via GPS...');
-
-    setTimeout(() => {
-      setMatchStatus('scanning');
-      setMatchStatusText('Scanning nearby Cortex challengers...');
-
-      setTimeout(() => {
-        setMatchStatus('found');
-        setMatchStatusText('Match Found! Starting Duel...');
-
+    if (key === '✓') {
+      const numericVal = parseFloat(userInput);
+      if (!isNaN(numericVal) && numericVal === currentQ.answer) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        setInputSuccessFlash(true);
         setTimeout(() => {
-          setMatchStatus('countdown');
-          setCountdownNum(3);
-
-          const cdInterval = setInterval(() => {
-            setCountdownNum((prev) => {
-              if (prev <= 1) {
-                clearInterval(cdInterval);
-                startActualGame();
-                return 0;
-              }
-              return prev - 1;
-            });
-          }, 800);
-        }, 1200);
-      }, 1500);
-    }, 1000);
-  };
-
-  const startActualGame = () => {
-    setUserScore(0);
-    setRivalScore(0);
-    setCurrentRound(0);
-    setRoundTimer(7);
-    setSelectedOption(null);
-    setRoundFeedback(null);
-    setIsLockedOut(false);
-    setPhase('playing');
-  };
-
-  // Round Timer & Opponent Solve Engine
-  useEffect(() => {
-    let interval: any;
-    if (phase === 'playing' && !roundFeedback) {
-      interval = setInterval(() => {
-        setRoundTimer((prev) => {
-          if (prev <= 1) {
-            // Timer expired -> Opponent solves or round passes
-            handleOpponentWinRound();
-            return 7;
-          }
-
-          // Opponent random solve chance (e.g. at 2-3s mark)
-          if (prev === 4 && Math.random() > 0.45 && !selectedOption) {
-            handleOpponentWinRound();
-          }
-
-          return prev - 1;
-        });
-      }, 1000);
+          setInputSuccessFlash(false);
+          battle.submitAnswer(numericVal);
+          setUserInput('');
+        }, 200);
+      } else {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        setInputErrorFlash(true);
+        setTimeout(() => {
+          setInputErrorFlash(false);
+          setUserInput('');
+        }, 350);
+      }
+      return;
     }
-    return () => clearInterval(interval);
-  }, [phase, currentRound, roundFeedback, selectedOption]);
 
-  const handleOpponentWinRound = () => {
-    setRoundFeedback('too_late');
-    setRivalScore((r) => r + 1);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+    const nextVal = userInput + key;
+    setUserInput(nextVal);
 
-    setTimeout(() => {
-      advanceRound();
-    }, 1500);
-  };
-
-  const advanceRound = () => {
-    if (currentRound >= 4) {
-      finishGame();
-    } else {
-      setCurrentRound((r) => r + 1);
-      setRoundTimer(7);
-      setSelectedOption(null);
-      setRoundFeedback(null);
-      setIsLockedOut(false);
-    }
-  };
-
-  // User Answer Option Selection
-  const handleSelectOption = (opt: number) => {
-    if (isLockedOut || roundFeedback !== null) return;
-
-    setSelectedOption(opt);
-
-    if (opt === currentQ.answer) {
-      // Correct & FIRST!
+    // Auto-advance if answer matches exactly
+    const numericVal = parseFloat(nextVal);
+    if (numericVal === currentQ.answer) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      setRoundFeedback('first');
-      setUserScore((s) => s + 1);
-
+      setInputSuccessFlash(true);
       setTimeout(() => {
-        advanceRound();
-      }, 1400);
-    } else {
-      // Wrong Answer -> 2s Penalty Lockout!
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-      setRoundFeedback('wrong');
-      setIsLockedOut(true);
-      setLockoutSeconds(2);
-
-      const lockInterval = setInterval(() => {
-        setLockoutSeconds((prev) => {
-          if (prev <= 1) {
-            clearInterval(lockInterval);
-            setIsLockedOut(false);
-            setRoundFeedback(null);
-            setSelectedOption(null);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+        setInputSuccessFlash(false);
+        battle.submitAnswer(numericVal);
+        setUserInput('');
+      }, 200);
     }
   };
 
-  const finishGame = async () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    await incrementStreak();
-    await incrementDailyProgress(1);
-    setPhase('results');
+  const handleExit = () => {
+    battle.resetBattle();
+    setUserInput('');
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
   };
 
-  const handleGoBack = () => {
-    Haptics.selectionAsync().catch(() => {});
-    router.replace('/(tabs)');
+  // Format question into vertical column calculation lines
+  const formatVerticalLines = () => {
+    if (typeof currentQ.operand1 === 'string' && currentQ.operand1.includes('\n')) {
+      return currentQ.operand1.split('\n');
+    }
+    if (currentQ.operand2 !== '' && currentQ.operand2 !== undefined) {
+      return [`${currentQ.operand1}`, `${currentQ.operator} ${currentQ.operand2}`];
+    }
+    return [`${currentQ.operand1}`];
   };
+
+  // 1. IDLE STATE
+  if (battle.status === 'idle') {
+    return (
+      <View style={styles.root}>
+        <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
+          <View style={styles.topBar}>
+            <Pressable style={styles.closeBtn} onPress={handleExit}>
+              <MaterialCommunityIcons name="close" size={24} color={colors.textSecondary} />
+            </Pressable>
+            <CortexHowToPlayButton onPress={() => setShowTutorial(true)} />
+          </View>
+
+          <View style={styles.idleContainer}>
+            <View style={styles.iconCircle}>
+              <MaterialCommunityIcons name="robot-outline" size={44} color={colors.primary} />
+            </View>
+
+            <Text style={styles.idleTitle}>60s Sprint Practice Duel</Text>
+            <Text style={styles.idleSub}>
+              Solve as many vertical column & mixed math calculations as you can in 60 seconds against an AI rival!
+            </Text>
+
+            {/* AI Practice Info Badge */}
+            <View style={styles.aiBadgeBox}>
+              <MaterialCommunityIcons name="information-outline" size={14} color="#38bdf8" />
+              <Text style={styles.aiBadgeText}>This is a practice duel against an AI rival.</Text>
+            </View>
+
+            <CortexButton
+              label="Start AI Practice Duel"
+              onPress={() => battle.startMatchmaking(battle.user.id, battle.user.rating)}
+              variant="primary"
+              style={styles.idleCta}
+            />
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // 2. SEARCHING STATE
+  if (battle.status === 'searching') {
+    return (
+      <View style={styles.root}>
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.searchingContainer}>
+            <View style={styles.searchingPulseCircle}>
+              <MaterialCommunityIcons name="robot-outline" size={48} color={colors.primary} />
+            </View>
+            <Text style={styles.searchingTitle}>Finding AI Rival…</Text>
+            <Text style={styles.searchingSub}>Training Match • Rating range ±50 ELO</Text>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // 3. COMPLETE STATE (STANDARDIZED VICTORY / DEFEAT SCREEN)
+  if (battle.status === 'complete') {
+    const isWinner = battle.user.score >= battle.opponent.score;
+    const userTotalScore = Math.max(0, battle.user.score * 100 + battle.earnedXP);
+    const userAccuracy = Math.round((battle.user.score / Math.max(1, battle.user.score + 2)) * 100);
+    const oppAccuracy = Math.min(100, Math.round((battle.opponent.score / Math.max(1, battle.opponent.score + 3)) * 100));
+    const userAvgSpeed = parseFloat((60 / Math.max(1, battle.user.score)).toFixed(1));
+    const oppAvgSpeed = parseFloat((60 / Math.max(1, battle.opponent.score)).toFixed(1));
+    const userStreak = battle.user.streak || battle.user.score;
+    const oppStreak = battle.opponent.streak || battle.opponent.score;
+    const coinsEarned = isWinner ? Math.max(15, Math.floor(userTotalScore / 20)) : 0;
+
+    // Trigger mission progress update
+    if (isWinner) {
+      useUserStore.getState().updateMissionProgress('win_duel', 1);
+    }
+    useUserStore.getState().updateMissionProgress('earn_xp', battle.earnedXP || 50);
+
+    return (
+      <CortexVictoryDefeatView
+        isWinner={isWinner}
+        userScore={battle.user.score}
+        opponentScore={battle.opponent.score}
+        userName={battle.user.name}
+        opponentName={battle.opponent.name}
+        userAccuracy={userAccuracy}
+        opponentAccuracy={oppAccuracy}
+        userAvgSpeedSeconds={userAvgSpeed}
+        opponentAvgSpeedSeconds={oppAvgSpeed}
+        userStreak={userStreak}
+        opponentStreak={oppStreak}
+        earnedXP={battle.earnedXP}
+        earnedCoins={coinsEarned}
+        onPlayNext={() => {
+          battle.resetBattle();
+          setUserInput('');
+          battle.startMatchmaking(battle.user.id, battle.user.rating);
+        }}
+        onExit={handleExit}
+      />
+    );
+  }
+
+  // 4. PLAYING STATE (60-SECOND DUEL WITH VERTICAL ARITHMETIC & NUMERIC KEYPAD)
+  const isLowTime = battle.timeLeft <= 10;
+  const isMidTime = battle.timeLeft <= 20 && battle.timeLeft > 10;
+  const verticalLines = formatVerticalLines();
 
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-        {/* ── 1. LOBBY PHASE ── */}
-        {phase === 'lobby' && (
-          <ScrollView contentContainerStyle={styles.lobbyContent} showsVerticalScrollIndicator={false}>
-            <View style={styles.topHeaderRow}>
-              <Pressable style={styles.iconBackBtn} onPress={handleGoBack}>
-                <MaterialCommunityIcons name="arrow-left" size={24} color="#ffffff" />
-              </Pressable>
+        {/* ── TOP HEADER WITH MINIMAL SCORE & 60s TIMER ── */}
+        <View style={styles.clockHeader}>
+          <View style={styles.headerTopRow}>
+            <Text style={styles.playerName}>{battle.user.name} vs {battle.opponent.name}</Text>
+            <Pressable onPress={handleExit} style={styles.quitBtn}>
+              <Text style={styles.quitText}>Surrender</Text>
+            </Pressable>
+            <Text style={styles.scoreText}>
+              {battle.user.score} - {battle.opponent.score}
+            </Text>
+            <CortexHowToPlayButton onPress={() => setShowTutorial(true)} />
+          </View>
 
-              <View style={styles.badgeHeader}>
-                <MaterialCommunityIcons name="lightning-bolt" size={14} color="#84cc16" />
-                <Text style={styles.badgeHeaderText}>FAST & FIRST DUEL</Text>
-              </View>
+          {/* Centered 60-Second Game Clock */}
+          <Animated.Text
+            style={[
+              styles.gameClock,
+              isMidTime && styles.gameClockAmber,
+              isLowTime && styles.gameClockRed,
+              animatedTimerStyle,
+            ]}
+          >
+            00:{battle.timeLeft < 10 ? `0${battle.timeLeft}` : battle.timeLeft}
+          </Animated.Text>
+
+          {/* Live Score Progress Bars */}
+          <View style={styles.progressRow}>
+            <View style={styles.progressCol}>
+              <ProgressBar progress={battle.user.progress / 100} height={4} />
+            </View>
+            <View style={styles.progressCol}>
+              <ProgressBar progress={battle.opponent.progress / 100} height={4} />
+            </View>
+          </View>
+        </View>
+
+        {/* ── VERTICAL COLUMN ARITHMETIC HERO CARD ── */}
+        <View style={styles.heroSection}>
+          <Text style={styles.counterText}>
+            Question {battle.currentQuestionIndex + 1} • Solve Fast!
+          </Text>
+
+          <CortexCard style={styles.verticalCard} padding={28}>
+            <View style={styles.verticalLinesBox}>
+              {verticalLines.map((line: string, idx: number) => (
+                <Text key={idx} style={styles.verticalLineText}>
+                  {line}
+                </Text>
+              ))}
             </View>
 
-            <View style={styles.heroBox}>
-              <Text style={styles.heroTitle}>Fast & First Duels</Text>
-              <Text style={styles.heroSubtitle}>
-                Real-time reaction & accuracy race. Be the first to answer correctly!
+            {/* Column Line */}
+            <View style={styles.columnDividerLine} />
+
+            {/* Glowing Answer Input Display Box */}
+            <View style={[
+              styles.inputBox,
+              inputSuccessFlash && styles.inputBoxSuccess,
+              inputErrorFlash && styles.inputBoxError,
+            ]}>
+              <Text style={styles.inputText}>
+                {userInput ? userInput : <Text style={styles.inputPlaceholder}>_</Text>}
               </Text>
             </View>
+          </CortexCard>
+        </View>
 
-            {/* Spec Feature Grid */}
-            <View style={styles.specRulesCard}>
-              <View style={styles.ruleRow}>
-                <MaterialCommunityIcons name="clock-fast" size={20} color="#84cc16" />
-                <Text style={styles.ruleText}>5 Rounds • First correct answer wins the point</Text>
-              </View>
-
-              <View style={styles.ruleRow}>
-                <MaterialCommunityIcons name="alert-circle-outline" size={20} color="#ef4444" />
-                <Text style={styles.ruleText}>Wrong answers trigger a 2-second penalty lockout</Text>
-              </View>
-
-              <View style={styles.ruleRow}>
-                <MaterialCommunityIcons name="trophy-outline" size={20} color="#facc15" />
-                <Text style={styles.ruleText}>Trains mental speed, impulse control & accuracy</Text>
-              </View>
-            </View>
-
-            {isUnlocked ? (
-              <ScalePressable style={styles.startDuelBtn} onPress={handleStartMatchmaking}>
-                <Text style={styles.startDuelBtnText}>Find Opponent Now</Text>
-              </ScalePressable>
-            ) : (
-              <View style={styles.lockedBox}>
-                <MaterialCommunityIcons name="lock-outline" size={28} color="#9ca3af" />
-                <Text style={styles.lockedTitle}>Mode Locked</Text>
-                <Text style={styles.lockedSub}>
-                  Complete 20 Sprint questions & 3 daily sessions with 70%+ accuracy to unlock!
+        {/* ── CUSTOM NUMERIC KEYPAD (0-9, BACKSPACE, SUBMIT) ── */}
+        <View style={styles.keypadSection}>
+          <View style={styles.keypadGrid}>
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9', '±', '0', '⌫', '   ', '✓', '   '].map((key, ki) => (
+              <Pressable
+                key={ki}
+                style={[
+                  styles.keypadBtn,
+                  key === '✓' && styles.keypadSubmitBtn,
+                  key === '⌫' && styles.keypadDelBtn,
+                  key === '±' && styles.keypadNegBtn,
+                  key.trim() === '' && styles.keypadBlankBtn,
+                ]}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={key === '⌫' ? 'Backspace' : key === '✓' ? 'Submit Answer' : `Key ${key}`}
+                disabled={key.trim() === ''}
+                onPress={() => key.trim() !== '' && handleKeypadPress(key)}
+              >
+                <Text
+                  style={[
+                    styles.keypadBtnText,
+                    key === '✓' && styles.keypadSubmitBtnText,
+                  ]}
+                >
+                  {key}
                 </Text>
-              </View>
-            )}
-          </ScrollView>
-        )}
-
-        {/* ── 2. MATCHMAKING RADAR PHASE ── */}
-        {phase === 'matchmaking' && (
-          <View style={styles.matchmakingContainer}>
-            <View style={styles.radarWrapper}>
-              <MaterialCommunityIcons name="radar" size={72} color="#84cc16" />
-            </View>
-
-            <Text style={styles.matchmakingTitle}>{matchStatusText}</Text>
-            {matchStatus === 'found' && (
-              <View style={styles.rivalBadgeCard}>
-                <MaterialCommunityIcons name="account-group" size={28} color="#38bdf8" />
-                <Text style={styles.rivalName}>{matchedRival.name}</Text>
-                <Text style={styles.rivalMeta}>{matchedRival.distance} • {matchedRival.elo} ELO</Text>
-              </View>
-            )}
-
-            {matchStatus === 'countdown' && (
-              <Text style={styles.countdownText}>{countdownNum}</Text>
-            )}
+              </Pressable>
+            ))}
           </View>
-        )}
-
-        {/* ── 3. PLAYING PHASE (EXACT SPEC MATCH LAYOUT) ── */}
-        {phase === 'playing' && (
-          <View style={styles.gameContainer}>
-            {/* Top Match Header */}
-            <View style={styles.gameTopHeader}>
-              <View style={styles.playerMetaRow}>
-                <View style={styles.playerMetaCol}>
-                  <Text style={styles.playerLabel}>You</Text>
-                  <Text style={styles.userScoreText}>{userScore}</Text>
-                </View>
-
-                <View style={styles.centerRoundMeta}>
-                  <Text style={styles.roundText}>Round {currentRound + 1}/5</Text>
-                  <Text style={styles.timerText}>00:0{roundTimer}</Text>
-                </View>
-
-                <View style={styles.playerMetaColRight}>
-                  <Text style={styles.playerLabel}>{matchedRival.name}</Text>
-                  <Text style={styles.rivalScoreText}>{rivalScore}</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Center Question & Status Display */}
-            <View style={styles.centerQuestionSection}>
-              <View style={styles.questionCard}>
-                <Text style={styles.questionExprText}>{currentQ.expr}</Text>
-                <Text style={styles.questionSubHint}>Answer before your opponent!</Text>
-
-                {/* Feedback Badges */}
-                {roundFeedback === 'first' && (
-                  <View style={styles.firstBadge}>
-                    <Text style={styles.firstBadgeText}>⚡ FIRST!</Text>
-                  </View>
-                )}
-
-                {roundFeedback === 'too_late' && (
-                  <View style={styles.tooLateBadge}>
-                    <Text style={styles.tooLateBadgeText}>⏳ TOO LATE!</Text>
-                  </View>
-                )}
-
-                {isLockedOut && (
-                  <View style={styles.lockoutBadge}>
-                    <Text style={styles.lockoutBadgeText}>🔒 LOCKED {lockoutSeconds}s (WRONG)</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-
-            {/* Bottom 4 Options Grid */}
-            <View style={styles.optionsSection}>
-              <View style={styles.optionsGrid}>
-                {currentQ.options.map((opt, idx) => {
-                  const isSelected = selectedOption === opt;
-                  const isCorrectTarget = Number(opt) === Number(currentQ.answer);
-                  const isSelectedCorrect = roundFeedback === 'first' && isSelected;
-                  const isSelectedWrong = roundFeedback === 'wrong' && isSelected;
-                  const isTargetHighlight = roundFeedback === 'wrong' && isCorrectTarget;
-
-                  return (
-                    <ScalePressable
-                      key={idx}
-                      disabled={isLockedOut || roundFeedback !== null}
-                      containerStyle={styles.optBtnContainer}
-                      style={[
-                        styles.optBtn,
-                        isSelectedCorrect && styles.optBtnCorrect,
-                        isSelectedWrong && styles.optBtnWrong,
-                        isTargetHighlight && styles.optBtnTargetHighlight,
-                        isLockedOut && !isSelectedWrong && !isTargetHighlight && styles.optBtnDisabled,
-                      ]}
-                      onPress={() => handleSelectOption(opt)}
-                    >
-                      <View style={styles.optContentRow}>
-                        <Text
-                          style={[
-                            styles.optBtnText,
-                            (isSelectedCorrect || isTargetHighlight) && styles.optBtnTextCorrect,
-                            isSelectedWrong && styles.optBtnTextWrong,
-                          ]}
-                        >
-                          {opt}
-                        </Text>
-                        {isSelectedCorrect ? (
-                          <MaterialCommunityIcons name="check-circle" size={18} color="#4ade80" />
-                        ) : isSelectedWrong ? (
-                          <MaterialCommunityIcons name="close-circle" size={18} color="#f87171" />
-                        ) : isTargetHighlight ? (
-                          <MaterialCommunityIcons name="check" size={18} color="#4ade80" />
-                        ) : null}
-                      </View>
-                    </ScalePressable>
-                  );
-                })}
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* ── 4. RESULTS PHASE ── */}
-        {phase === 'results' && (
-          <View style={styles.resultsContainer}>
-            <MaterialCommunityIcons
-              name={userScore >= rivalScore ? 'trophy' : 'emoticon-neutral-outline'}
-              size={64}
-              color={userScore >= rivalScore ? '#facc15' : '#9ca3af'}
-            />
-
-            <Text style={styles.resultsTitle}>
-              {userScore >= rivalScore ? 'VICTORY!' : 'DEFEAT'}
-            </Text>
-            <Text style={styles.resultsSub}>
-              Final Score: {userScore} - {rivalScore}
-            </Text>
-
-            <ScalePressable style={styles.startDuelBtn} onPress={handleStartMatchmaking}>
-              <Text style={styles.startDuelBtnText}>Rematch</Text>
-            </ScalePressable>
-
-            <ScalePressable style={styles.secondaryBtn} onPress={handleGoBack}>
-              <Text style={styles.secondaryBtnText}>Back to Arena</Text>
-            </ScalePressable>
-          </View>
-        )}
+        </View>
       </SafeAreaView>
     </View>
   );
@@ -488,355 +356,605 @@ export default function FastAndFirstBattleScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#0a0b0d',
+    backgroundColor: colors.bg,
   },
   safeArea: {
     flex: 1,
   },
 
-  lobbyContent: {
-    padding: 20,
+  topBar: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    alignItems: 'flex-end',
   },
-  topHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-  },
-  iconBackBtn: {
+  closeBtn: {
     padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
-  badgeHeader: {
+
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(132, 204, 22, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+
+  idleContainer: {
+    flex: 1,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  idleTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 28,
+    color: colors.textPrimary,
+    marginBottom: 8,
+  },
+  idleSub: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 15,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 22,
+  },
+  aiBadgeBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(132, 204, 22, 0.12)',
-    paddingHorizontal: 12,
+    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+    borderWidth: 1,
+    borderRadius: 12,
     paddingVertical: 6,
-    borderRadius: 14,
-  },
-  badgeHeaderText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#84cc16',
-  },
-
-  heroBox: {
+    paddingHorizontal: 12,
     marginBottom: 24,
   },
-  heroTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#ffffff',
-    marginBottom: 6,
+  aiBadgeText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    color: '#38bdf8',
   },
-  heroSubtitle: {
-    fontSize: 15,
-    color: '#9ca3af',
-    lineHeight: 22,
+  idleCta: {
+    width: '100%',
   },
 
-  specRulesCard: {
-    backgroundColor: '#121418',
+  searchingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  searchingPulseCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: 'rgba(132, 204, 22, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  searchingTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 24,
+    color: colors.textPrimary,
+    marginBottom: 6,
+  },
+  searchingSub: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+
+  /* Results Top Bar */
+  resultsTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+
+  scrollContent: {
+    paddingBottom: 16,
+  },
+
+  /* Hero Banner */
+  heroBanner: {
+    marginHorizontal: 16,
+    borderRadius: 28,
+    padding: 24,
+    overflow: 'hidden',
+    position: 'relative',
+    marginBottom: 20,
+  },
+  meshContainer: {
+    position: 'absolute',
+    top: -40,
+    right: -40,
+    width: 180,
+    height: 180,
+    opacity: 0.15,
+  },
+  meshTriangle: {
+    width: '100%',
+    height: '100%',
+    transform: [{ rotate: '45deg' }],
+  },
+  meshTriangleWin: {
+    backgroundColor: '#d97706',
+  },
+  meshTriangleLoss: {
+    backgroundColor: '#475569',
+  },
+
+  bannerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  bannerLeft: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  victoryTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 34,
+    letterSpacing: 1.5,
+    marginBottom: 2,
+  },
+  titleWin: {
+    color: '#ea580c',
+  },
+  titleLoss: {
+    color: '#475569',
+  },
+
+  victorySub: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 16,
+    color: '#334155',
+    marginBottom: 6,
+  },
+
+  coinsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 16,
+  },
+  coinsText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    color: '#b45309',
+  },
+
+  boostRow: {
+    marginBottom: 16,
+  },
+  boostText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    color: '#ea580c',
+  },
+
+  bannerCta: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  bannerCtaWin: {
+    backgroundColor: '#84cc16',
+  },
+  bannerCtaLoss: {
+    backgroundColor: '#f97316',
+  },
+  bannerCtaText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    color: '#ffffff',
+  },
+
+  bannerRight: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trophyWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  goldTrophyBase: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trophyStarBadge: {
+    position: 'absolute',
+    top: 26,
+    backgroundColor: '#d97706',
+    borderRadius: 12,
+    padding: 3,
+  },
+  sparkleTopLeft: {
+    position: 'absolute',
+    top: -10,
+    left: -10,
+  },
+  sparkleBottomRight: {
+    position: 'absolute',
+    bottom: -6,
+    right: -6,
+  },
+
+  trophyWrapperLoss: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '-18deg' }],
+  },
+  silverTrophyBase: {
+    opacity: 0.85,
+  },
+  leaf1: {
+    position: 'absolute',
+    top: -12,
+    right: -10,
+  },
+  leaf2: {
+    position: 'absolute',
+    bottom: -8,
+    left: -12,
+  },
+
+  /* Data Comparison Section */
+  dataComparisonSection: {
+    paddingHorizontal: 16,
+  },
+  sectionHeaderTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 18,
+    color: colors.textPrimary,
+    marginBottom: 12,
+  },
+
+  comparisonCard: {
+    backgroundColor: colors.surface,
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#20242d',
-    gap: 16,
-    marginBottom: 32,
-  },
-  ruleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  ruleText: {
-    fontSize: 14,
-    color: '#d1d5db',
-    flex: 1,
-  },
-
-  startDuelBtn: {
-    backgroundColor: '#84cc16',
-    borderRadius: 16,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: colors.border,
     marginBottom: 12,
   },
-  startDuelBtnText: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#000000',
-  },
-
-  lockedBox: {
-    backgroundColor: '#121418',
-    borderRadius: 20,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#20242d',
-  },
-  lockedTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  lockedSub: {
-    fontSize: 13,
-    color: '#9ca3af',
-    textAlign: 'center',
-  },
-
-  /* Matchmaking Phase */
-  matchmakingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  radarWrapper: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(132, 204, 22, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-  },
-  matchmakingTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 16,
-  },
-  rivalBadgeCard: {
-    alignItems: 'center',
-    backgroundColor: '#121418',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#20242d',
-    width: '100%',
-  },
-  rivalName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#ffffff',
-    marginTop: 6,
-  },
-  rivalMeta: {
-    fontSize: 12,
-    color: '#9ca3af',
-  },
-  countdownText: {
-    fontSize: 64,
-    fontWeight: '800',
-    color: '#84cc16',
-    marginTop: 16,
-  },
-
-  /* Playing Phase Layout */
-  gameContainer: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-    justifyContent: 'space-between',
-  },
-  gameTopHeader: {
-    paddingTop: 12,
-  },
-  playerMetaRow: {
+  playersRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: 12,
   },
-  playerMetaCol: {
-    alignItems: 'flex-start',
-  },
-  playerMetaColRight: {
-    alignItems: 'flex-end',
-  },
-  playerLabel: {
-    fontSize: 13,
-    color: '#9ca3af',
-    marginBottom: 2,
-  },
-  userScoreText: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#38bdf8',
-  },
-  rivalScoreText: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#ef4444',
-  },
-  centerRoundMeta: {
-    alignItems: 'center',
-  },
-  roundText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  timerText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#facc15',
-  },
-
-  /* Center Question Card */
-  centerQuestionSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-  },
-  questionCard: {
-    width: '100%',
-    backgroundColor: '#121418',
-    borderRadius: 24,
-    padding: 32,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#20242d',
-    position: 'relative',
-  },
-  questionExprText: {
-    fontSize: 42,
-    fontWeight: '800',
-    color: '#ffffff',
-    marginBottom: 8,
-  },
-  questionSubHint: {
-    fontSize: 13,
-    color: '#9ca3af',
-  },
-
-  firstBadge: {
-    marginTop: 16,
-    backgroundColor: '#22c55e',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  firstBadgeText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#000000',
-  },
-
-  tooLateBadge: {
-    marginTop: 16,
-    backgroundColor: '#374151',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  tooLateBadgeText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-
-  lockoutBadge: {
-    marginTop: 16,
-    backgroundColor: '#ef4444',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  lockoutBadgeText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-
-  /* Options Section */
-  optionsSection: {
-    width: '100%',
-  },
-  optionsGrid: {
+  playerProfile: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+    alignItems: 'center',
+    gap: 8,
   },
-  optBtnContainer: {
-    width: '48%',
-  },
-  optBtn: {
-    height: 60,
-    backgroundColor: '#171920',
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#20242d',
+  avatarCircleBlue: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    borderWidth: 2,
+    borderColor: '#3b82f6',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarCircleRed: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 2,
+    borderColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playerNameText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  totalScoreLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+
+  scoresRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
     paddingHorizontal: 12,
   },
-  optContentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    width: '100%',
+  blueScoreText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontVariant: ['tabular-nums'],
+    fontSize: 36,
+    color: '#3b82f6',
   },
-  optBtnCorrect: {
-    backgroundColor: 'rgba(74, 222, 128, 0.18)',
-    borderColor: '#4ade80',
-  },
-  optBtnWrong: {
-    backgroundColor: 'rgba(248, 113, 113, 0.18)',
-    borderColor: '#f87171',
-  },
-  optBtnTargetHighlight: {
-    backgroundColor: 'rgba(74, 222, 128, 0.12)',
-    borderColor: '#4ade80',
-  },
-  optBtnDisabled: {
-    opacity: 0.4,
-  },
-  optBtnText: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-  optBtnTextCorrect: {
-    color: '#4ade80',
-  },
-  optBtnTextWrong: {
-    color: '#f87171',
+  redScoreText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontVariant: ['tabular-nums'],
+    fontSize: 36,
+    color: '#ef4444',
   },
 
-  /* Results Phase */
-  resultsContainer: {
+  dualBarTrack: {
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  blueBarFill: {
+    height: '100%',
+    backgroundColor: '#3b82f6',
+    borderRadius: 5,
+  },
+  redBarFill: {
+    height: '100%',
+    backgroundColor: '#ef4444',
+    borderRadius: 5,
+  },
+  barDivider: {
+    width: 4,
+  },
+
+  /* Metrics Card */
+  metricsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  metricRow: {
+    marginBottom: 18,
+  },
+  metricRowLast: {
+    marginBottom: 0,
+  },
+  metricLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11,
+    color: colors.textSecondary,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  metricValuesRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+    paddingHorizontal: 4,
+  },
+  blueMetricText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    color: '#3b82f6',
+  },
+  redMetricText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    color: '#ef4444',
+  },
+  dualBarTrackSub: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  blueBarFillSub: {
+    height: '100%',
+    backgroundColor: '#3b82f6',
+    borderRadius: 3,
+  },
+  redBarFillSub: {
+    height: '100%',
+    backgroundColor: '#ef4444',
+    borderRadius: 3,
+  },
+
+  /* Fixed Footer */
+  resultsFooter: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.bg,
+    gap: 8,
+  },
+  actionBtn: {
+    width: '100%',
+  },
+
+  /* Clock Header */
+  clockHeader: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    alignItems: 'center',
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 8,
+  },
+  playerName: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  quitBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  quitText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.4)',
+  },
+  scoreText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontVariant: ['tabular-nums'],
+    fontSize: 24,
+    color: colors.textPrimary,
+  },
+
+  gameClock: {
+    fontFamily: 'Inter_600SemiBold',
+    fontVariant: ['tabular-nums'],
+    fontSize: 32,
+    lineHeight: 36,
+    color: colors.textPrimary,
+    letterSpacing: -0.5,
+    marginBottom: 16,
+  },
+  gameClockAmber: {
+    color: colors.warning,
+  },
+  gameClockRed: {
+    color: colors.error,
+  },
+
+  progressRow: {
+    flexDirection: 'row',
+    gap: 16,
+    width: '100%',
+  },
+  progressCol: {
     flex: 1,
+  },
+
+  /* Vertical Column Arithmetic Card */
+  heroSection: {
+    flex: 1,
+    paddingHorizontal: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
   },
-  resultsTitle: {
+  counterText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 12,
+  },
+  verticalCard: {
+    width: '100%',
+    alignItems: 'flex-end',
+    paddingHorizontal: 36,
+    paddingVertical: 24,
+  },
+  verticalLinesBox: {
+    alignItems: 'flex-end',
+    width: '100%',
+  },
+  verticalLineText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontVariant: ['tabular-nums'],
+    fontSize: 42,
+    lineHeight: 48,
+    color: colors.textPrimary,
+    textAlign: 'right',
+    letterSpacing: 2,
+  },
+  columnDividerLine: {
+    width: '100%',
+    height: 3,
+    backgroundColor: colors.textPrimary,
+    marginVertical: 12,
+    borderRadius: 2,
+  },
+  inputBox: {
+    width: '100%',
+    height: 56,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  inputBoxError: {
+    borderColor: '#ef4444',
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+  },
+  inputText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontVariant: ['tabular-nums'],
     fontSize: 32,
-    fontWeight: '800',
-    color: '#ffffff',
-    marginTop: 16,
-    marginBottom: 6,
+    color: colors.primary,
+    letterSpacing: 3,
   },
-  resultsSub: {
-    fontSize: 16,
-    color: '#9ca3af',
-    marginBottom: 32,
+  inputPlaceholder: {
+    color: 'rgba(255, 255, 255, 0.25)',
   },
-  secondaryBtn: {
-    paddingVertical: 14,
+
+  /* Custom Numeric Keypad Section */
+  keypadSection: {
     paddingHorizontal: 24,
+    paddingBottom: 24,
   },
-  secondaryBtnText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#9ca3af',
+  keypadGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  keypadBtn: {
+    width: '31%',
+    height: 58,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  keypadSubmitBtn: {
+    backgroundColor: '#84cc16',
+    borderColor: '#84cc16',
+  },
+  keypadDelBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  keypadNegBtn: {
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+  },
+  keypadBlankBtn: {
+    backgroundColor: 'transparent',
+    borderColor: 'transparent',
+  },
+  inputBoxSuccess: {
+    borderColor: '#4ade80',
+    backgroundColor: 'rgba(74, 222, 128, 0.12)',
+  },
+  keypadBtnText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 24,
+    color: colors.textPrimary,
+  },
+  keypadSubmitBtnText: {
+    color: '#000000',
+    fontWeight: '800',
   },
 });

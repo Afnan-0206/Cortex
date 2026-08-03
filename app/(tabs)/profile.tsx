@@ -27,6 +27,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useUserStore } from '../../src/store/userStore';
 import { useSettings } from '../../lib/hooks/useSettings';
 import { executeOptimisticAction } from '../../lib/optimisticManager';
+import { getLevel, getLevelProgress, getXpRemainingForNextLevel } from '../../src/utils/level';
 
 // Reusable Spring Pressable Component
 interface ScalePressableProps {
@@ -169,13 +170,23 @@ export default function ProfileScreen() {
                 )}
               </Pressable>
 
-              <Text style={styles.leagueTag}>
-                {profile.email ? `Account: ${profile.email}` : 'Bronze Division • Rookie Athlete'}
-              </Text>
+              <View style={styles.levelHeaderRow}>
+                <View style={styles.levelBadgeChip}>
+                  <MaterialCommunityIcons name="star-circle" size={14} color="#84cc16" />
+                  <Text style={styles.levelBadgeText}>LEVEL {getLevel(profile.brainPoints || 0)}</Text>
+                </View>
+                <Text style={styles.xpRemainingText}>
+                  {getXpRemainingForNextLevel(profile.brainPoints || 0)} XP to Lvl {getLevel(profile.brainPoints || 0) + 1}
+                </Text>
+              </View>
+
+              <View style={styles.levelTrack}>
+                <View style={[styles.levelFill, { width: `${Math.round(getLevelProgress(profile.brainPoints || 0) * 100)}%` }]} />
+              </View>
             </View>
           </View>
 
-          {/* Quick Stats Metrics Row */}
+          {/* Quick Stats Metrics & Streak Freeze Row */}
           <View style={styles.statsPillGrid}>
             <View style={styles.statPillItem}>
               <MaterialCommunityIcons name="fire" size={16} color="#f97316" />
@@ -183,13 +194,13 @@ export default function ProfileScreen() {
             </View>
 
             <View style={styles.statPillItem}>
-              <MaterialCommunityIcons name="hexagon-outline" size={14} color="#84cc16" />
-              <Text style={styles.statPillValue}>{profile.brainPoints ?? 0} XP</Text>
+              <MaterialCommunityIcons name="snowflake" size={14} color="#38bdf8" />
+              <Text style={styles.statPillValue}>{profile.streakFreezes ?? 0}/2 FREEZES</Text>
             </View>
 
             <View style={styles.statPillItem}>
-              <MaterialCommunityIcons name="crosshairs-gps" size={14} color="#22c55e" />
-              <Text style={styles.statPillValue}>{profile.totalSessionsCompleted ?? 0} SESSIONS</Text>
+              <MaterialCommunityIcons name="hexagon-outline" size={14} color="#84cc16" />
+              <Text style={styles.statPillValue}>{profile.brainPoints ?? 0} XP</Text>
             </View>
           </View>
         </Animated.View>
@@ -391,12 +402,57 @@ export default function ProfileScreen() {
 
             <View style={styles.controlDivider} />
 
-            <Pressable style={styles.controlRow} onPress={handleSignOut}>
+            <Pressable
+              style={styles.controlRow}
+              onPress={() => setActiveModal('reset_progress')}
+              accessibilityRole="button"
+              accessibilityLabel="Reset Local Progress"
+            >
+              <View style={styles.controlMeta}>
+                <MaterialCommunityIcons name="refresh" size={18} color="#f97316" style={{ marginRight: 10 }} />
+                <Text style={[styles.controlTitle, { color: '#f97316' }]}>Reset Local Progress</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color="#f97316" />
+            </Pressable>
+
+            <View style={styles.controlDivider} />
+
+            <Pressable style={styles.controlRow} onPress={handleSignOut} accessibilityRole="button" accessibilityLabel="Sign Out Account">
               <View style={styles.controlMeta}>
                 <MaterialCommunityIcons name="logout" size={18} color="#ef4444" style={{ marginRight: 10 }} />
                 <Text style={[styles.controlTitle, { color: '#ef4444' }]}>Sign Out Account</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={20} color="#ef4444" />
+            </Pressable>
+
+            <View style={styles.controlDivider} />
+
+            <Pressable
+              style={styles.controlRow}
+              onPress={() => setActiveModal('delete_account')}
+              accessibilityRole="button"
+              accessibilityLabel="Delete Account Permanently"
+            >
+              <View style={styles.controlMeta}>
+                <MaterialCommunityIcons name="trash-can-outline" size={18} color="#dc2626" style={{ marginRight: 10 }} />
+                <Text style={[styles.controlTitle, { color: '#dc2626' }]}>Delete Account (Permanent)</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color="#dc2626" />
+            </Pressable>
+
+            <View style={styles.controlDivider} />
+
+            <Pressable
+              style={styles.controlRow}
+              onPress={() => setActiveModal('privacy_terms')}
+              accessibilityRole="button"
+              accessibilityLabel="Privacy Policy and Terms of Service"
+            >
+              <View style={styles.controlMeta}>
+                <MaterialCommunityIcons name="shield-check-outline" size={18} color="#3b82f6" style={{ marginRight: 10 }} />
+                <Text style={styles.controlTitle}>Privacy Policy & Terms</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color="#64748b" />
             </Pressable>
           </View>
         </Animated.View>
@@ -409,7 +465,7 @@ export default function ProfileScreen() {
             <Text style={styles.sloganText2}>YOUR BEST.</Text>
           </View>
 
-          <Text style={styles.versionLabel}>VERSION 1.26.9 • MATIKS ENGINE</Text>
+          <Text style={styles.versionLabel}>VERSION 1.0.0 (BUILD 57) • MATIKS ENGINE</Text>
         </Animated.View>
       </ScrollView>
 
@@ -482,6 +538,102 @@ export default function ProfileScreen() {
           <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.modalTitle}>Duel Messages 💬</Text>
             <Text style={styles.modalSub}>No unread duel chats right now. Challenge rivals in the Arena to start chatting!</Text>
+            <ScalePressable style={styles.modalCloseBtn} onPress={() => setActiveModal(null)}>
+              <Text style={styles.modalCloseBtnText}>CLOSE</Text>
+            </ScalePressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Reset Local Progress Modal */}
+      <Modal
+        visible={activeModal === 'reset_progress'}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActiveModal(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setActiveModal(null)}>
+          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+            <MaterialCommunityIcons name="alert-outline" size={40} color="#f97316" style={{ marginBottom: 10 }} />
+            <Text style={styles.modalTitle}>Reset Local Progress?</Text>
+            <Text style={styles.modalSub}>
+              This will reset your local profile XP, daily progress, and streak statistics to default. Your account authentication will remain active.
+            </Text>
+
+            <ScalePressable
+              style={[styles.modalPrimaryBtn, { backgroundColor: '#f97316' }]}
+              onPress={async () => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                await useUserStore.getState().resetProfile();
+                setActiveModal(null);
+              }}
+            >
+              <Text style={[styles.modalPrimaryBtnText, { color: '#ffffff' }]}>RESET ALL LOCAL PROGRESS</Text>
+            </ScalePressable>
+
+            <ScalePressable style={styles.modalCloseBtn} onPress={() => setActiveModal(null)}>
+              <Text style={styles.modalCloseBtnText}>CANCEL</Text>
+            </ScalePressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Delete Account Modal (App Store Guideline 5.1.1(v)) */}
+      <Modal
+        visible={activeModal === 'delete_account'}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActiveModal(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setActiveModal(null)}>
+          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color="#dc2626" style={{ marginBottom: 10 }} />
+            <Text style={styles.modalTitle}>Delete Account Permanently?</Text>
+            <Text style={styles.modalSub}>
+              Warning: This action cannot be undone. All your ELO rating, streaks, brain points, and match history will be permanently deleted from Cortex servers.
+            </Text>
+
+            <ScalePressable
+              style={[styles.modalPrimaryBtn, { backgroundColor: '#dc2626' }]}
+              onPress={async () => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                setActiveModal(null);
+                await handleSignOut();
+              }}
+            >
+              <Text style={[styles.modalPrimaryBtnText, { color: '#ffffff' }]}>CONFIRM PERMANENT DELETION</Text>
+            </ScalePressable>
+
+            <ScalePressable style={styles.modalCloseBtn} onPress={() => setActiveModal(null)}>
+              <Text style={styles.modalCloseBtnText}>CANCEL</Text>
+            </ScalePressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Privacy Policy & Terms Modal */}
+      <Modal
+        visible={activeModal === 'privacy_terms'}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setActiveModal(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setActiveModal(null)}>
+          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>Privacy Policy & Terms 🛡️</Text>
+            <Text style={styles.modalSub}>
+              Cortex respects player privacy. We use encrypted storage via iOS Keychain and Android Keystore for authentication tokens. No location or contact data is collected or shared.{'\n\n'}
+              By using Cortex, you agree to our Fair Play ELO guidelines. Server-authoritative anti-cheat engines validate all duel scores.
+            </Text>
+            <ScalePressable
+              style={styles.modalPrimaryBtn}
+              onPress={() => {
+                Linking.openURL('https://cortex.app/privacy');
+                setActiveModal(null);
+              }}
+            >
+              <Text style={styles.modalPrimaryBtnText}>READ FULL PRIVACY POLICY</Text>
+            </ScalePressable>
             <ScalePressable style={styles.modalCloseBtn} onPress={() => setActiveModal(null)}>
               <Text style={styles.modalCloseBtnText}>CLOSE</Text>
             </ScalePressable>
@@ -681,11 +833,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     marginTop: 2,
+    marginBottom: 6,
   },
   handleText: {
     fontFamily: 'Inter_600SemiBold',
     color: '#9ca3af',
     fontSize: 11,
+  },
+  levelHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  levelBadgeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(132, 204, 22, 0.15)',
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  levelBadgeText: {
+    color: '#84cc16',
+    fontSize: 11,
+    fontFamily: 'Outfit_800ExtraBold',
+  },
+  xpRemainingText: {
+    color: '#94a3b8',
+    fontSize: 10,
+    fontFamily: 'Inter_500Medium',
+  },
+  levelTrack: {
+    width: '100%',
+    height: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 2.5,
+    overflow: 'hidden',
+  },
+  levelFill: {
+    height: '100%',
+    backgroundColor: '#84cc16',
+    borderRadius: 2.5,
   },
   leagueTag: {
     fontFamily: 'Inter_500Medium',

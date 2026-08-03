@@ -5,24 +5,19 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0d1117",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": [
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.READ_CONTACTS",
-        "android.permission.WRITE_CONTACTS"
-      ],
+      "permissions": [],
       "package": "com.cortex.app"
     },
     "web": {
@@ -34,21 +29,10 @@
       "expo-router",
       "expo-font",
       "expo-video",
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "Cortex uses your location to find nearby 1v1 duel rivals."
-        }
-      ],
-      [
-        "expo-contacts",
-        {
-          "contactsPermission": "Cortex uses your contacts to challenge friends to math duels."
-        }
-      ],
       "expo-web-browser",
       "expo-status-bar",
-      "expo-audio"
+      "expo-audio",
+      "expo-secure-store"
     ],
     "extra": {
       "router": {},

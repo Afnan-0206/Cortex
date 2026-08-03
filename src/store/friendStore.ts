@@ -1,7 +1,5 @@
 import { create } from 'zustand';
 import { supabase } from '../../lib/supabase';
-import * as Contacts from 'expo-contacts';
-import * as Location from 'expo-location';
 
 export interface SuggestedUser {
   id: string;
@@ -87,77 +85,7 @@ export const useFriendStore = create<FriendStore>((set, get) => ({
 
       const suggestedMap = new Map<string, SuggestedUser>();
 
-      // --- 1. Contact Discovery (opt-in) ---
-      try {
-        const { status: contactStatus } = await Contacts.requestPermissionsAsync();
-        if (contactStatus === 'granted') {
-          const { data: contactList } = await Contacts.getContactsAsync({
-            fields: [Contacts.Fields.PhoneNumbers],
-          });
-          const phones = contactList
-            .flatMap(c => c.phoneNumbers ?? [])
-            .map(p => p.number?.replace(/\D/g, '') ?? '')
-            .filter(p => p.length >= 10)
-            .map(p => p.slice(-10));
-
-          if (phones.length > 0) {
-            const { data: matchedProfiles } = await supabase
-              .from('profiles')
-              .select('id, username, rating, avatar_color')
-              .in('phone_last10', phones)
-              .neq('id', myId)
-              .limit(20);
-
-            (matchedProfiles ?? []).forEach((p: any) => {
-              if (!friendIds.has(p.id) && !outgoingIds.has(p.id)) {
-                suggestedMap.set(p.id, {
-                  id: p.id,
-                  username: p.username,
-                  rating: p.rating ?? 1200,
-                  avatar_color: p.avatar_color ?? AVATAR_COLORS[0],
-                  source: 'contact',
-                });
-              }
-            });
-          }
-        }
-      } catch {
-        // contact permission denied or unavailable — skip silently
-      }
-
-      // --- 2. Location Discovery (opt-in) ---
-      try {
-        const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
-        if (locStatus === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          const lat = Math.round(loc.coords.latitude * 10) / 10; // ~11km bucket
-          const lng = Math.round(loc.coords.longitude * 10) / 10;
-
-          const { data: nearbyProfiles } = await supabase
-            .from('profiles')
-            .select('id, username, rating, avatar_color')
-            .gte('location_lat', lat - 0.2)
-            .lte('location_lat', lat + 0.2)
-            .gte('location_lng', lng - 0.2)
-            .lte('location_lng', lng + 0.2)
-            .neq('id', myId)
-            .limit(20);
-
-          (nearbyProfiles ?? []).forEach((p: any) => {
-            if (!friendIds.has(p.id) && !outgoingIds.has(p.id) && !suggestedMap.has(p.id)) {
-              suggestedMap.set(p.id, {
-                id: p.id,
-                username: p.username,
-                rating: p.rating ?? 1200,
-                avatar_color: p.avatar_color ?? AVATAR_COLORS[1],
-                source: 'location',
-              });
-            }
-          });
-        }
-      } catch {
-        // location unavailable — skip silently
-      }
+      // --- Online User Presence Discovery ---
 
       // --- 3. Online Presence Fallback ---
       const { data: onlinePresence } = await supabase

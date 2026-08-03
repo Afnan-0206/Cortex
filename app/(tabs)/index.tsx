@@ -695,6 +695,124 @@ export default function ArenaHomeScreen() {
           </ScalePressable>
         </Animated.View>
 
+        {/* ── 7-DAY DAILY REWARD CARD ── */}
+        {(() => {
+          const todayStr = new Date().toISOString().split('T')[0];
+          const canClaimToday = profile.lastDailyRewardClaimDate !== todayStr;
+          const currentCycleDay = profile.dailyRewardCycleDay || 1;
+
+          return (
+            <Animated.View entering={FadeInDown.delay(50).duration(250)} style={styles.rewardCycleCard}>
+              <View style={styles.rewardCycleHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <MaterialCommunityIcons name="calendar-star" size={18} color="#facc15" />
+                  <Text style={styles.rewardCycleTitle}>7-DAY LOGIN STREAK REWARD</Text>
+                </View>
+                <Pressable
+                  style={[styles.cycleClaimBtn, !canClaimToday && styles.cycleClaimBtnDone]}
+                  onPress={async () => {
+                    if (canClaimToday) {
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                      const res = await useUserStore.getState().claim7DayReward();
+                      if (res.xpAwarded > 0) {
+                        setShowDailyModal(true);
+                      }
+                    }
+                  }}
+                >
+                  <Text style={[styles.cycleClaimBtnText, !canClaimToday && styles.cycleClaimBtnTextDone]}>
+                    {canClaimToday ? `CLAIM DAY ${currentCycleDay} 🎁` : `DAY ${currentCycleDay} CLAIMED ✓`}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* 7-Day Pill Row */}
+              <View style={styles.rewardPillGrid}>
+                {[1, 2, 3, 4, 5, 6, 7].map((d) => {
+                  const isPast = d < currentCycleDay || (d === currentCycleDay && !canClaimToday);
+                  const isCurrent = d === currentCycleDay && canClaimToday;
+                  const rewardXp = [50, 75, 100, 125, 150, 200, 300][d - 1];
+
+                  return (
+                    <View
+                      key={d}
+                      style={[
+                        styles.dayPill,
+                        isPast && styles.dayPillDone,
+                        isCurrent && styles.dayPillActive,
+                      ]}
+                    >
+                      <Text style={[styles.dayPillNumber, isCurrent && styles.dayPillNumberActive]}>
+                        D{d}
+                      </Text>
+                      <Text style={[styles.dayPillXp, isCurrent && styles.dayPillXpActive]}>
+                        +{rewardXp}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </Animated.View>
+          );
+        })()}
+
+        {/* ── DAILY MISSIONS BENTO CARD ── */}
+        {(() => {
+          const missions = profile.dailyMissions || [
+            { id: 'm_workout', title: 'Complete 1 Workout', target: 1, current: 0, rewardXp: 40, claimed: false, type: 'workout' },
+            { id: 'm_win_duel', title: 'Win 1 AI Duel', target: 1, current: 0, rewardXp: 40, claimed: false, type: 'win_duel' },
+            { id: 'm_earn_xp', title: 'Earn 200 XP', target: 200, current: 0, rewardXp: 40, claimed: false, type: 'earn_xp' },
+          ];
+
+          return (
+            <Animated.View entering={FadeInDown.delay(100).duration(250)} style={styles.missionsCard}>
+              <View style={styles.missionsHeaderRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <MaterialCommunityIcons name="target-account" size={18} color="#38bdf8" />
+                  <Text style={styles.missionsTitle}>DAILY ROTATING MISSIONS</Text>
+                </View>
+                <Text style={styles.missionsSubTag}>+40 XP EACH</Text>
+              </View>
+
+              <View style={styles.missionsList}>
+                {missions.map((m) => {
+                  const isDone = m.current >= m.target;
+                  return (
+                    <View key={m.id} style={styles.missionRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.missionTitle}>{m.title}</Text>
+                        <Text style={styles.missionProgressText}>
+                          Progress: {m.current}/{m.target}
+                        </Text>
+                      </View>
+
+                      {m.claimed ? (
+                        <View style={styles.claimedBadge}>
+                          <Text style={styles.claimedBadgeText}>CLAIMED ✓</Text>
+                        </View>
+                      ) : isDone ? (
+                        <Pressable
+                          style={styles.claimMissionBtn}
+                          onPress={async () => {
+                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                            await useUserStore.getState().claimMissionReward(m.id);
+                          }}
+                        >
+                          <Text style={styles.claimMissionBtnText}>CLAIM +40 XP</Text>
+                        </Pressable>
+                      ) : (
+                        <View style={styles.pendingMissionBadge}>
+                          <Text style={styles.pendingMissionText}>{m.current}/{m.target}</Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            </Animated.View>
+          );
+        })()}
+
         {/* ── 5. DUELS CATEGORY SELECTOR ── */}
         <View style={styles.duelsSection}>
           <Text style={styles.sectionLabel}>DUELS</Text>
@@ -1284,7 +1402,168 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#262934',
     padding: 16,
+    marginBottom: 12,
+  },
+  rewardCycleCard: {
+    backgroundColor: '#171920',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(250, 204, 21, 0.3)',
+    padding: 14,
+    marginBottom: 12,
+  },
+  rewardCycleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  rewardCycleTitle: {
+    fontFamily: 'Outfit_900Black',
+    color: '#ffffff',
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+  cycleClaimBtn: {
+    backgroundColor: '#facc15',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  cycleClaimBtnDone: {
+    backgroundColor: 'rgba(250, 204, 21, 0.15)',
+  },
+  cycleClaimBtnText: {
+    fontFamily: 'Outfit_900Black',
+    color: '#0d0e12',
+    fontSize: 10,
+  },
+  cycleClaimBtnTextDone: {
+    color: '#facc15',
+  },
+  rewardPillGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 4,
+  },
+  dayPill: {
+    flex: 1,
+    backgroundColor: '#12141a',
+    borderRadius: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  dayPillDone: {
+    backgroundColor: 'rgba(34, 197, 94, 0.12)',
+    borderColor: '#22c55e',
+  },
+  dayPillActive: {
+    backgroundColor: 'rgba(250, 204, 21, 0.18)',
+    borderColor: '#facc15',
+  },
+  dayPillNumber: {
+    fontFamily: 'Outfit_800ExtraBold',
+    fontSize: 10,
+    color: '#6b7280',
+  },
+  dayPillNumberActive: {
+    color: '#facc15',
+  },
+  dayPillXp: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 9,
+    color: '#9ca3af',
+    marginTop: 2,
+  },
+  dayPillXpActive: {
+    color: '#ffffff',
+  },
+
+  // Daily Missions Card
+  missionsCard: {
+    backgroundColor: '#171920',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+    padding: 14,
     marginBottom: 20,
+  },
+  missionsHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  missionsTitle: {
+    fontFamily: 'Outfit_900Black',
+    color: '#ffffff',
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+  missionsSubTag: {
+    fontFamily: 'Outfit_800ExtraBold',
+    color: '#38bdf8',
+    fontSize: 10,
+  },
+  missionsList: {
+    gap: 8,
+  },
+  missionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#12141a',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  missionTitle: {
+    fontFamily: 'Inter_700Bold',
+    color: '#ffffff',
+    fontSize: 12,
+  },
+  missionProgressText: {
+    fontFamily: 'Inter_500Medium',
+    color: '#6b7280',
+    fontSize: 10,
+    marginTop: 1,
+  },
+  claimedBadge: {
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  claimedBadgeText: {
+    fontFamily: 'Outfit_800ExtraBold',
+    color: '#22c55e',
+    fontSize: 10,
+  },
+  claimMissionBtn: {
+    backgroundColor: '#38bdf8',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  claimMissionBtnText: {
+    fontFamily: 'Outfit_900Black',
+    color: '#0d0e12',
+    fontSize: 10,
+  },
+  pendingMissionBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  pendingMissionText: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    color: '#9ca3af',
+    fontSize: 10,
   },
   dailyCardHeader: {
     flexDirection: 'row',

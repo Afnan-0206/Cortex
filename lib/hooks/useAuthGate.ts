@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { supabase } from '../supabase';
-import { useAuthStore } from '../../src/store/authStore';
 import { useUserStore } from '../../src/store/userStore';
 
 export function useAuthGate() {
@@ -10,7 +9,8 @@ export function useAuthGate() {
   const segments = useSegments();
   const rootNavigationState = useRootNavigationState();
 
-  const { session, initializeAuth } = useAuthStore();
+  const session = useUserStore((s) => s.session);
+  const initializeAuth = useUserStore((s) => s.initializeAuth);
   const { setLoggedInState, updateName } = useUserStore();
 
   useEffect(() => {
@@ -36,11 +36,11 @@ export function useAuthGate() {
             ?? (u.email?.split('@')[0] ?? 'User');
           const userEmail = u.email ?? '';
 
-          useAuthStore.setState({ session: currentSession, user: u });
+          useUserStore.setState({ session: currentSession, user: u });
           await updateName(name);
           await setLoggedInState(true, userEmail, name);
         } else {
-          useAuthStore.setState({ session: null, user: null });
+          useUserStore.setState({ session: null, user: null });
           await setLoggedInState(false, '', '');
         }
 

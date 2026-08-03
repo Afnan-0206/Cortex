@@ -21,6 +21,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useDailyChallenge } from '../../lib/hooks/useDailyChallenge';
 import { useUserStore } from '../../src/store/userStore';
+import { getLevel, getLevelProgress, getXpRemainingForNextLevel } from '../../src/utils/level';
 
 export default function DailyChallengeScreen() {
   const router = useRouter();
@@ -47,6 +48,11 @@ export default function DailyChallengeScreen() {
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
+
+  // Completion stats tracking
+  const [workoutStartTime] = useState<number>(Date.now());
+  const [correctAnswersCount, setCorrectAnswersCount] = useState<number>(0);
+  const [totalAnswersCount, setTotalAnswersCount] = useState<number>(0);
 
   // Dynamic total question count from sections
   const totalQuestions = sections.reduce((sum, s) => sum + s.questionCount, 0) || 15;
@@ -89,7 +95,9 @@ export default function DailyChallengeScreen() {
     setSelectedOption(optionValue);
     const res = await submitAnswer(optionValue, 1500);
 
+    setTotalAnswersCount((prev) => prev + 1);
     if (res.correct) {
+      setCorrectAnswersCount((prev) => prev + 1);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setFeedback('correct');
     } else {
@@ -102,6 +110,8 @@ export default function DailyChallengeScreen() {
       setFeedback(null);
 
       if (currentQuestionIndex + 1 >= totalQuestions) {
+        useUserStore.getState().updateMissionProgress('workout', 1);
+        useUserStore.getState().updateMissionProgress('earn_xp', 250);
         setShowCompletionModal(true);
       }
     }, 600);
@@ -294,31 +304,80 @@ export default function DailyChallengeScreen() {
         ) : null}
       </ScrollView>
 
-      {/* Completion Modal Overlay */}
+      {/* Full-Screen Celebration Completion Modal Overlay */}
       <Modal visible={showCompletionModal} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
-          <Animated.View entering={FadeInUp.duration(300)} style={styles.modalCard}>
+          <Animated.View entering={FadeInUp.duration(350)} style={styles.modalCard}>
+            {/* Confetti Particle Orbs */}
+            <View style={styles.particleContainer} pointerEvents="none">
+              <View style={[styles.confettiOrb, { top: -10, left: 20, backgroundColor: '#84cc16' }]} />
+              <View style={[styles.confettiOrb, { top: 15, right: 30, backgroundColor: '#f97316' }]} />
+              <View style={[styles.confettiOrb, { top: 40, left: 60, backgroundColor: '#38bdf8' }]} />
+            </View>
+
             <View style={styles.modalTrophyRing}>
               <MaterialCommunityIcons name="trophy-award" size={48} color="#84cc16" />
             </View>
-            <Text style={styles.modalTitle}>Daily Workout Complete!</Text>
+            <Text style={styles.modalTitle}>DAILY WORKOUT COMPLETE!</Text>
             <Text style={styles.modalSub}>
-              You solved all 4 sections and maintained your streak.
+              You completed all 4 sections for today and secured your streak.
             </Text>
 
+            {/* Level & Level-Up Indicator */}
+            {(() => {
+              const currentXp = profile.brainPoints || 0;
+              const lvl = getLevel(currentXp);
+              const progress = getLevelProgress(currentXp);
+              const xpNeeded = getXpRemainingForNextLevel(currentXp);
+
+              return (
+                <View style={styles.levelCard}>
+                  <View style={styles.levelHeaderRow}>
+                    <View style={styles.levelBadgeChip}>
+                      <MaterialCommunityIcons name="star-circle" size={16} color="#84cc16" />
+                      <Text style={styles.levelBadgeText}>LEVEL {lvl}</Text>
+                    </View>
+                    <Text style={styles.xpRemainingText}>{xpNeeded} XP to Level {lvl + 1}</Text>
+                  </View>
+                  <View style={styles.levelTrack}>
+                    <View style={[styles.levelFill, { width: `${Math.round(progress * 100)}%` }]} />
+                  </View>
+                </View>
+              );
+            })()}
+
+            {/* Metrics Grid (XP, Streak, Accuracy %, Duration) */}
             <View style={styles.rewardSummaryRow}>
               <View style={styles.rewardItem}>
-                <MaterialCommunityIcons name="hexagon-outline" size={18} color="#84cc16" />
+                <MaterialCommunityIcons name="hexagon-outline" size={16} color="#84cc16" />
                 <Text style={styles.rewardItemText}>+250 XP</Text>
               </View>
+
               <View style={styles.rewardItem}>
-                <MaterialCommunityIcons name="circle-multiple" size={18} color="#facc15" />
-                <Text style={styles.rewardItemText}>+50 Coins</Text>
-              </View>
-              <View style={styles.rewardItem}>
-                <MaterialCommunityIcons name="fire" size={18} color="#f97316" />
+                <MaterialCommunityIcons name="fire" size={16} color="#f97316" />
                 <Text style={styles.rewardItemText}>
                   🔥 {rewardResult?.newStreak ?? (profile.streak > 0 ? profile.streak : 1)} Streak
+                </Text>
+              </View>
+
+              <View style={styles.rewardItem}>
+                <MaterialCommunityIcons name="target" size={16} color="#38bdf8" />
+                <Text style={styles.rewardItemText}>
+                  {totalAnswersCount > 0
+                    ? `${Math.round((correctAnswersCount / totalAnswersCount) * 100)}% Acc`
+                    : '100% Acc'}
+                </Text>
+              </View>
+
+              <View style={styles.rewardItem}>
+                <MaterialCommunityIcons name="clock-outline" size={16} color="#a78bfa" />
+                <Text style={styles.rewardItemText}>
+                  {(() => {
+                    const elapsedSec = Math.max(1, Math.floor((Date.now() - workoutStartTime) / 1000));
+                    const mins = Math.floor(elapsedSec / 60);
+                    const secs = elapsedSec % 60;
+                    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+                  })()}
                 </Text>
               </View>
             </View>
@@ -330,7 +389,7 @@ export default function DailyChallengeScreen() {
                 router.push('/(tabs)');
               }}
             >
-              <Text style={styles.modalCtaText}>Explore Arena Modes</Text>
+              <Text style={styles.modalCtaText}>Continue</Text>
             </Pressable>
           </Animated.View>
         </View>
@@ -407,12 +466,21 @@ const styles = StyleSheet.create({
 
   // Modal
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(6, 8, 16, 0.9)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
-  modalCard: { width: '100%', backgroundColor: '#121622', borderRadius: 28, padding: 28, alignItems: 'center', borderWidth: 1.5, borderColor: 'rgba(132, 204, 22, 0.4)' },
-  modalTrophyRing: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(132, 204, 22, 0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  modalTitle: { fontSize: 24, fontWeight: '900', color: '#ffffff', marginBottom: 8, textAlign: 'center' },
-  modalSub: { fontSize: 15, color: '#94a3b8', textAlign: 'center', lineHeight: 22, marginBottom: 20 },
-  rewardSummaryRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, width: '100%', marginBottom: 24 },
-  rewardItem: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255, 255, 255, 0.06)', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 16 },
+  modalCard: { width: '100%', backgroundColor: '#121622', borderRadius: 28, padding: 28, alignItems: 'center', borderWidth: 1.5, borderColor: 'rgba(132, 204, 22, 0.4)', position: 'relative' },
+  particleContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  confettiOrb: { position: 'absolute', width: 8, height: 8, borderRadius: 4, opacity: 0.8 },
+  modalTrophyRing: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(132, 204, 22, 0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  modalTitle: { fontSize: 22, fontWeight: '900', color: '#ffffff', marginBottom: 6, textAlign: 'center', letterSpacing: 0.5 },
+  modalSub: { fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 20, marginBottom: 16 },
+  levelCard: { width: '100%', backgroundColor: 'rgba(255, 255, 255, 0.04)', borderRadius: 16, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' },
+  levelHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  levelBadgeChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(132, 204, 22, 0.15)', paddingVertical: 3, paddingHorizontal: 8, borderRadius: 10 },
+  levelBadgeText: { color: '#84cc16', fontSize: 12, fontWeight: '800' },
+  xpRemainingText: { color: '#94a3b8', fontSize: 11, fontWeight: '600' },
+  levelTrack: { width: '100%', height: 6, backgroundColor: 'rgba(255, 255, 255, 0.1)', borderRadius: 3, overflow: 'hidden' },
+  levelFill: { height: '100%', backgroundColor: '#84cc16', borderRadius: 3 },
+  rewardSummaryRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, width: '100%', marginBottom: 20 },
+  rewardItem: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255, 255, 255, 0.06)', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 14 },
   rewardItemText: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
   modalCtaBtn: { width: '100%', height: 52, backgroundColor: '#84cc16', borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   modalCtaText: { fontSize: 16, fontWeight: '900', color: '#0d0e12' },

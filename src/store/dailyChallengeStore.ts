@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { analytics } from '../../lib/analytics';
 import { useUserStore } from './userStore';
 import { MathQuestion } from '../types';
+import { getPersonalizedDifficulty } from '../utils/difficulty';
 
 export interface DailySection {
   id: 'warmup' | 'speed' | 'accuracy' | 'final_push';
@@ -60,18 +61,21 @@ function seededRandom(seed: number) {
   return x - Math.floor(x);
 }
 
-export function generatePredefinedDailySet(dateStr: string): DailySection[] {
+export function generatePredefinedDailySet(dateStr: string, accuracy = 0.85): DailySection[] {
   let seed = dateSeed(dateStr);
   const nextRand = () => {
     seed += 1;
     return seededRandom(seed);
   };
 
+  const diffLevel = getPersonalizedDifficulty(accuracy);
+  const scale = diffLevel === 3 ? 1.4 : diffLevel === 1 ? 0.7 : 1.0;
+
   // Section 1: Warmup (3 Questions)
   const warmupQuestions: MathQuestion[] = [];
   for (let i = 0; i < 3; i++) {
-    const a = Math.floor(nextRand() * 20) + 10;
-    const b = Math.floor(nextRand() * 20) + 5;
+    const a = Math.floor(nextRand() * 20 * scale) + 10;
+    const b = Math.floor(nextRand() * 20 * scale) + 5;
     const isAdd = nextRand() > 0.4;
     const ans = isAdd ? a + b : a - b;
     warmupQuestions.push({
@@ -181,9 +185,8 @@ export const useDailyChallengeStore = create<DailyChallengeState>((set, get) => 
   loadDailyChallenge: async () => {
     set({ isLoading: true });
     const todayStr = new Date().toISOString().split('T')[0];
-    const generatedSections = generatePredefinedDailySet(todayStr);
-
     const userProfile = useUserStore.getState().profile;
+    const generatedSections = generatePredefinedDailySet(todayStr, userProfile.mathAccuracy || 0.85);
     const isProfileTodayDone =
       userProfile.lastCompletedDate === todayStr &&
       (userProfile.dailyRewardClaimed || userProfile.dailyProgress === 4);

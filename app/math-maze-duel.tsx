@@ -10,8 +10,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import * as Haptics from 'expo-haptics';
-import * as Location from 'expo-location';
-import * as Contacts from 'expo-contacts';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -97,15 +95,7 @@ export default function MathMazeDuelScreen() {
   const [errorDoorId, setErrorDoorId] = useState<string | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
 
-  // Request permissions on load
-  useEffect(() => {
-    (async () => {
-      try {
-        await Location.requestForegroundPermissionsAsync();
-        await Contacts.requestPermissionsAsync();
-      } catch {}
-    })();
-  }, []);
+
 
   // Launch Matchmaking & Generate Fresh Puzzle
   const handleStartMatchmaking = async () => {

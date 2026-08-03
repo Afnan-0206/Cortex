@@ -1,5 +1,12 @@
 export type AnalyticsEvent =
   | 'app_open'
+  | 'onboarding_completed'
+  | 'daily_started'
+  | 'daily_completed'
+  | 'duel_started'
+  | 'duel_completed'
+  | 'streak_saved'
+  | 'reward_claimed'
   | 'battle_started'
   | 'battle_completed'
   | 'puzzle_completed'

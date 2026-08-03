@@ -5,25 +5,23 @@ import { useRouter } from 'expo-router';
 
 import { colors } from '../../src/theme';
 import { CortexButton } from '../../src/components/CortexButton';
-import { useAuthStore } from '../../src/store/authStore';
+import { useUserStore } from '../../src/store/userStore';
 
 export default function OnboardingScreen3() {
   const router = useRouter();
   const [username, setUsername] = useState('Afnan');
-  const auth = useAuthStore();
+  const updateName = useUserStore((s) => s.updateName);
 
-  const handleFinish = () => {
-    if (auth.profile) {
-      auth.profile.name = username.trim() || 'Afnan';
-    }
-    router.replace('/(tabs)');
+  const handleNext = () => {
+    updateName(username.trim() || 'Afnan');
+    router.push('/onboarding/4');
   };
 
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
-          <Text style={styles.stepIndicator}>3 of 3</Text>
+          <Text style={styles.stepIndicator}>3 of 4</Text>
 
           <View style={styles.centerSection}>
             <Text style={styles.title}>Climb the leaderboard</Text>
@@ -45,8 +43,8 @@ export default function OnboardingScreen3() {
           </View>
 
           <CortexButton
-            label="Get Started"
-            onPress={handleFinish}
+            label="Continue"
+            onPress={handleNext}
             variant="primary"
           />
         </View>

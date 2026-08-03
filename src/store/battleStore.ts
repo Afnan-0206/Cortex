@@ -181,7 +181,7 @@ export const useBattleStore = create<BattleStoreState>((set, get) => ({
         opponentSolveTimer: 2,
         questions: freshQuestions,
         user: { id: userId || 'user_local', name: userName, rating: userRating, score: 0, progress: 0, streak: 0 },
-        opponent: { id: 'opp_rival', name: 'Rival Athlete', rating: userRating + 25, score: 0, progress: 0, streak: 0 },
+        opponent: { id: 'opp_rival', name: 'AI Rival', rating: userRating + 25, score: 0, progress: 0, streak: 0 },
       });
 
       get().subscribeToMatch(res.matchId);
@@ -245,7 +245,22 @@ export const useBattleStore = create<BattleStoreState>((set, get) => ({
       // 60-second time expired -> Finish match and record results
       set({ timeLeft: 0, status: 'complete' });
       analytics.track('battle_completed', { matchId: state.matchId });
+
+      // Execute Server-Authoritative Match Outcome RPC (Phase 6 Security Fix)
       if (state.matchId) {
+        void (async () => {
+          try {
+            await supabase.rpc('submit_match_result', {
+              p_match_id: state.matchId!,
+              p_score: state.user.score,
+              p_opponent_id: state.opponent.id,
+              p_is_winner: state.user.score >= state.opponent.score,
+            });
+          } catch {
+            // silent fallback
+          }
+        })();
+
         bulkInsert('activity_feed', [
           { user_id: state.user.id, action: 'match_completed', metadata: { match_id: state.matchId, score: state.user.score, xp_earned: state.earnedXP } },
           { user_id: state.opponent.id, action: 'match_completed', metadata: { match_id: state.matchId, score: state.opponent.score, xp_earned: Math.max(10, state.earnedXP - 15) } },
