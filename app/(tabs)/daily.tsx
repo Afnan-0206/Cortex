@@ -1,103 +1,133 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import Svg, {
+  Defs,
+  LinearGradient,
+  RadialGradient,
+  Stop,
+  Path,
+  Circle,
+  Ellipse,
+  G,
+} from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
-import Animated, {
-  FadeInDown,
-  FadeInUp,
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-} from 'react-native-reanimated';
-import { useDailyChallenge } from '../../lib/hooks/useDailyChallenge';
+
+import { colors } from '../../src/theme';
 import { useUserStore } from '../../src/store/userStore';
-import { getLevel, getLevelProgress, getXpRemainingForNextLevel } from '../../src/utils/level';
+import { secureStorage } from '../../lib/secureStorage';
+import { supabase } from '../../lib/supabase';
+
+interface SectionConfig {
+  id: number;
+  title: string;
+  subtitle: string;
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  questions: Array<{
+    prompt: string;
+    target: string;
+    options: number[];
+    answer: number;
+  }>;
+}
+
+const WORKOUT_SECTIONS: SectionConfig[] = [
+  {
+    id: 1,
+    title: 'WARMUP',
+    subtitle: '3 quick recall questions to ignite focus',
+    icon: 'flash',
+    questions: [
+      { prompt: '29 - 5 = ', target: '?', options: [21, 26, 29, 24], answer: 24 },
+      { prompt: '18 + 7 = ', target: '?', options: [23, 25, 27, 24], answer: 25 },
+      { prompt: '6 × 8 = ', target: '?', options: [42, 48, 54, 46], answer: 48 },
+    ],
+  },
+  {
+    id: 2,
+    title: 'SPEED ROUND',
+    subtitle: 'Fast-paced mental math against the clock',
+    icon: 'lock-outline',
+    questions: [
+      { prompt: '14 × 4 = ', target: '?', options: [52, 56, 60, 48], answer: 56 },
+      { prompt: '81 ÷ 9 = ', target: '?', options: [7, 8, 9, 11], answer: 9 },
+      { prompt: '75 - 28 = ', target: '?', options: [47, 43, 49, 45], answer: 47 },
+    ],
+  },
+  {
+    id: 3,
+    title: 'ACCURACY ROUND',
+    subtitle: 'Precision calculations requiring exact focus',
+    icon: 'lock-outline',
+    questions: [
+      { prompt: '15 × 15 = ', target: '?', options: [215, 225, 235, 245], answer: 225 },
+      { prompt: '144 ÷ 12 = ', target: '?', options: [10, 11, 12, 14], answer: 12 },
+      { prompt: '99 + 48 = ', target: '?', options: [137, 147, 157, 149], answer: 147 },
+    ],
+  },
+  {
+    id: 4,
+    title: 'FINAL PUSH',
+    subtitle: 'Ultimate challenge to lock in today’s streak',
+    icon: 'lock-outline',
+    questions: [
+      { prompt: '√196 + 6 = ', target: '?', options: [18, 20, 22, 24], answer: 20 },
+      { prompt: '45 × 3 = ', target: '?', options: [125, 135, 145, 130], answer: 135 },
+      { prompt: '120 - 37 = ', target: '?', options: [81, 83, 85, 87], answer: 83 },
+    ],
+  },
+];
 
 export default function DailyChallengeScreen() {
   const router = useRouter();
   const profile = useUserStore((s) => s.profile);
-  const {
-    dateStr,
-    sections,
-    completedSections,
-    currentQuestionIndex,
-    isCompleted,
-    isLoading,
-    isSubmitting,
-    rewardResult,
-    submitAnswer,
-    resumeProgress,
-  } = useDailyChallenge();
 
-  useFocusEffect(
-    useCallback(() => {
-      resumeProgress();
-    }, [resumeProgress])
-  );
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isAlreadyCompletedToday = profile.lastCompletedDate === todayStr;
 
+  const [activeSectionId, setActiveSectionId] = useState<number>(1);
+  const [unlockedSections, setUnlockedSections] = useState<number[]>([1]);
+  const [currentQuestionIdx, setCurrentQuestionIdx] = useState<number>(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
-  const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [isCompleted, setIsCompleted] = useState<boolean>(isAlreadyCompletedToday);
+  const [showCompletionModal, setShowCompletionModal] = useState<boolean>(false);
 
-  // Completion stats tracking
-  const [workoutStartTime] = useState<number>(Date.now());
-  const [correctAnswersCount, setCorrectAnswersCount] = useState<number>(0);
-  const [totalAnswersCount, setTotalAnswersCount] = useState<number>(0);
-
-  // Dynamic total question count from sections
-  const totalQuestions = sections.reduce((sum, s) => sum + s.questionCount, 0) || 15;
-
-  // Reset per-question feedback when the question advances
+  // Sync completion state if store profile updates
   useEffect(() => {
-    setSelectedOption(null);
-    setFeedback(null);
-  }, [currentQuestionIndex]);
-
-  // Format date e.g. "SATURDAY, AUG 1"
-  const formattedDate = new Date().toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  }).toUpperCase();
-
-  // Find active question object
-  let accumulated = 0;
-  let activeQuestion: any = null;
-  let activeSection: any = null;
-  let activeSectionIdx = 0;
-  let questionInSecIdx = 0;
-
-  for (let i = 0; i < sections.length; i++) {
-    const sec = sections[i];
-    if (currentQuestionIndex < accumulated + sec.questionCount) {
-      activeSection = sec;
-      activeSectionIdx = i;
-      questionInSecIdx = currentQuestionIndex - accumulated;
-      activeQuestion = sec.questions[questionInSecIdx];
-      break;
+    if (profile.lastCompletedDate === todayStr) {
+      setIsCompleted(true);
     }
-    accumulated += sec.questionCount;
-  }
+  }, [profile.lastCompletedDate, todayStr]);
 
-  const handleOptionPress = async (optionValue: number) => {
-    if (feedback !== null || !activeQuestion) return;
+  // Format today's date e.g. "WED, AUG 5"
+  const formattedDate = new Date()
+    .toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    })
+    .toUpperCase();
+
+  const currentSection = WORKOUT_SECTIONS.find((s) => s.id === activeSectionId) || WORKOUT_SECTIONS[0];
+  const activeQuestion = currentSection.questions[currentQuestionIdx] || currentSection.questions[0];
+
+  const handleOptionPress = (optionValue: number) => {
+    if (feedback !== null || isCompleted || isAlreadyCompletedToday) return;
 
     setSelectedOption(optionValue);
-    const res = await submitAnswer(optionValue, 1500);
+    const isRight = optionValue === activeQuestion.answer;
 
-    setTotalAnswersCount((prev) => prev + 1);
-    if (res.correct) {
-      setCorrectAnswersCount((prev) => prev + 1);
+    if (isRight) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setFeedback('correct');
     } else {
@@ -109,379 +139,846 @@ export default function DailyChallengeScreen() {
       setSelectedOption(null);
       setFeedback(null);
 
-      if (currentQuestionIndex + 1 >= totalQuestions) {
-        useUserStore.getState().updateMissionProgress('workout', 1);
-        useUserStore.getState().updateMissionProgress('earn_xp', 250);
-        setShowCompletionModal(true);
+      if (isRight) {
+        if (currentQuestionIdx + 1 < currentSection.questions.length) {
+          setCurrentQuestionIdx((prev) => prev + 1);
+        } else {
+          // Section complete
+          if (activeSectionId < 4) {
+            const nextSecId = activeSectionId + 1;
+            setUnlockedSections((prev) => [...new Set([...prev, nextSecId])]);
+            setActiveSectionId(nextSecId);
+            setCurrentQuestionIdx(0);
+          } else {
+            // Full Workout Complete! (Lock immediately & update stores ONCE)
+            setIsCompleted(true);
+
+            const curProfile = useUserStore.getState().profile;
+            const alreadyDone = curProfile.lastCompletedDate === todayStr;
+
+            const newStreak = alreadyDone
+              ? Math.max(1, curProfile.streak || 1)
+              : Math.max(1, (curProfile.streak || 0) + 1);
+
+            const newLongest = Math.max(curProfile.longestStreak || 0, newStreak);
+            const newXP = (curProfile.brainPoints || 0) + 250;
+            const newCoins = (curProfile.coins || 0) + 50;
+
+            const updatedProfile = {
+              ...curProfile,
+              brainPoints: newXP,
+              coins: newCoins,
+              streak: newStreak,
+              longestStreak: newLongest,
+              lastCompletedDate: todayStr,
+              dailyRewardClaimed: true,
+              dailyProgress: 4,
+            };
+
+            // Update Zustand state & Storage
+            useUserStore.setState({ profile: updatedProfile });
+            secureStorage.setItem('cortex_profile_v2', JSON.stringify(updatedProfile)).catch(() => {});
+
+            // Update daily missions
+            useUserStore.getState().updateMissionProgress('workout', 1);
+            useUserStore.getState().updateMissionProgress('earn_xp', 250);
+
+            // Sync to Supabase background
+            const user = useUserStore.getState().user;
+            if (user?.id) {
+              (async () => {
+                try {
+                  await supabase
+                    .from('profiles')
+                    .update({
+                      xp: newXP,
+                      coins: newCoins,
+                      streak: newStreak,
+                      best_streak: newLongest,
+                    })
+                    .eq('id', user.id);
+                } catch (e) {
+                  console.warn('Supabase sync error:', e);
+                }
+              })();
+            }
+
+            setShowCompletionModal(true);
+          }
+        }
       }
-    }, 600);
+    }, 500);
   };
 
-  if (isLoading) {
-    return (
-      <SafeAreaView style={styles.loadingArea}>
-        <ActivityIndicator size="large" color="#84cc16" />
-        <Text style={styles.loadingText}>Loading Today’s Workout...</Text>
-      </SafeAreaView>
-    );
-  }
+  const userHasCompletedToday = isCompleted || isAlreadyCompletedToday;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* ── 1. HEADER WITH STREAK & REWARD PREVIEW ── */}
-        <Animated.View entering={FadeInDown.duration(300)} style={styles.headerBlock}>
-          <View style={styles.headerTopRow}>
-            <View>
-              <Text style={styles.dateTag}>{formattedDate}</Text>
-              <Text style={styles.headerTitle}>DAILY WORKOUT</Text>
-            </View>
-
-            {/* Streak Badge */}
-            <View style={styles.streakBadge}>
-              <MaterialCommunityIcons name="fire" size={18} color="#f97316" />
-              <Text style={styles.streakText}>{profile.streak ?? 0} STREAK</Text>
-            </View>
-          </View>
-
-          {/* Reward Preview & Streak Rule Banner */}
-          <View style={{ gap: 8 }}>
-            <View style={styles.rewardPreviewRow}>
-              <MaterialCommunityIcons name="trophy-outline" size={14} color="#84cc16" />
-              <Text style={styles.rewardPreviewText}>REWARD: +250 XP • +50 COINS</Text>
-            </View>
-
-            <View style={styles.streakNoticeBox}>
-              <MaterialCommunityIcons name="information-outline" size={14} color="#38bdf8" />
-              <Text style={styles.streakNoticeText}>
-                Streak advances only when the full workout is completed. Leaving mid-way saves progress but yields no streak gain.
+    <View style={styles.root}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ── TOP HEADER BAR ── */}
+          <View style={styles.headerRow}>
+            <View style={styles.headerLeft}>
+              <View style={styles.dateTagRow}>
+                <MaterialCommunityIcons name="calendar-month-outline" size={14} color="#84cc16" />
+                <Text style={styles.dateTagText}>{formattedDate}</Text>
+              </View>
+              <Text style={styles.mainTitle}>Daily Workout</Text>
+              <Text style={styles.headerSubtitle}>
+                Build consistency. Train your mind. Beat yesterday.
               </Text>
             </View>
-          </View>
-        </Animated.View>
 
-        {/* ── 2. WORKOUT SECTIONS TRACKER ── */}
-        <Animated.View entering={FadeInDown.delay(50).duration(300)} style={styles.sectionsTrackerContainer}>
+            {/* Streak Pill Badge */}
+            <View style={styles.streakPill}>
+              <MaterialCommunityIcons name="fire" size={18} color="#f97316" />
+              <Text style={styles.streakPillText}>{profile.streak || 0} STREAK</Text>
+            </View>
+          </View>
+
+          {/* ── TODAY'S REWARD BANNER ── */}
+          <View style={styles.rewardBanner}>
+            <View style={styles.rewardLeftContent}>
+              <View style={styles.trophyIconCircle}>
+                <MaterialCommunityIcons name="trophy-variant" size={20} color="#84cc16" />
+              </View>
+              <View>
+                <Text style={styles.rewardHeaderTag}>TODAY'S REWARD</Text>
+                <View style={styles.rewardValuesRow}>
+                  <Text style={styles.xpText}>+250 XP</Text>
+                  <Text style={styles.dividerText}>|</Text>
+                  <Text style={styles.coinsText}>+50 COINS</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* 3D Brain Pedestal Graphic */}
+            <View style={styles.brainGraphicWrap}>
+              <Svg width={110} height={85} viewBox="0 0 110 85" fill="none">
+                <Defs>
+                  <RadialGradient id="brainGlow" cx="50%" cy="50%" r="50%">
+                    <Stop offset="0%" stopColor="#4ade80" stopOpacity="0.8" />
+                    <Stop offset="70%" stopColor="#22c55e" stopOpacity="0.3" />
+                    <Stop offset="100%" stopColor="#166534" stopOpacity="0" />
+                  </RadialGradient>
+                  <LinearGradient id="pedestalTop" x1="0" y1="0" x2="100%" y2="0">
+                    <Stop offset="0%" stopColor="#1e293b" />
+                    <Stop offset="50%" stopColor="#475569" />
+                    <Stop offset="100%" stopColor="#0f172a" />
+                  </LinearGradient>
+                  <LinearGradient id="brainColor" x1="0" y1="0" x2="100%" y2="100%">
+                    <Stop offset="0%" stopColor="#86efac" />
+                    <Stop offset="50%" stopColor="#22c55e" />
+                    <Stop offset="100%" stopColor="#15803d" />
+                  </LinearGradient>
+                </Defs>
+
+                <Circle cx="55" cy="40" r="38" fill="url(#brainGlow)" />
+                <Ellipse cx="55" cy="40" rx="42" ry="8" stroke="#84cc16" strokeWidth="1" strokeDasharray="3 3" opacity="0.7" />
+
+                <Ellipse cx="55" cy="68" rx="36" ry="10" fill="url(#pedestalTop)" stroke="#334155" strokeWidth="1.5" />
+                <Path d="M19 68 C19 76 91 76 91 68 L86 78 C86 84 24 84 24 78 Z" fill="#0f172a" stroke="#1e293b" />
+
+                <Ellipse cx="55" cy="64" rx="28" ry="6" fill="#0284c7" opacity="0.4" />
+                <Ellipse cx="55" cy="64" rx="26" ry="5" stroke="#38bdf8" strokeWidth="1.5" />
+
+                <G transform="translate(26, 12)">
+                  <Path
+                    d="M28 8 C18 8 10 14 10 24 C10 32 16 38 24 40 C28 40 29 36 29 32 C29 28 24 26 24 22 C24 16 28 12 32 12 Z"
+                    fill="url(#brainColor)"
+                    stroke="#bbf7d0"
+                    strokeWidth="1"
+                  />
+                  <Path
+                    d="M30 8 C40 8 48 14 48 24 C48 32 42 38 34 40 C30 40 29 36 29 32 C29 28 34 26 34 22 C34 16 30 12 26 12 Z"
+                    fill="url(#brainColor)"
+                    stroke="#bbf7d0"
+                    strokeWidth="1"
+                  />
+                  <Path d="M18 16 C22 18 20 24 16 26" stroke="#166534" strokeWidth="2" fill="none" />
+                  <Path d="M40 16 C36 18 38 24 42 26" stroke="#166534" strokeWidth="2" fill="none" />
+                  <Path d="M22 28 C26 30 24 36 18 36" stroke="#166534" strokeWidth="2" fill="none" />
+                  <Path d="M36 28 C32 30 34 36 40 36" stroke="#166534" strokeWidth="2" fill="none" />
+                  <Path d="M28 10 L28 38" stroke="#4ade80" strokeWidth="1.5" />
+                </G>
+              </Svg>
+            </View>
+          </View>
+
+          {/* ── STREAK RULE NOTICE BOX ── */}
+          <View style={styles.noticeBox}>
+            <View style={styles.infoIconCircle}>
+              <MaterialCommunityIcons name="information" size={14} color="#ffffff" />
+            </View>
+            <Text style={styles.noticeText}>
+              Streak advances only when the full workout is completed. Leaving mid-way saves progress but yields no streak gain.
+            </Text>
+          </View>
+
+          {/* ── WORKOUT SECTIONS HEADER ── */}
           <Text style={styles.sectionTrackerTitle}>WORKOUT SECTIONS</Text>
-          <View style={styles.sectionsGrid}>
-            {sections.map((sec, idx) => {
-              const isSecDone = completedSections > idx || isCompleted;
-              const isSecActive = activeSectionIdx === idx && !isCompleted;
+          <View style={styles.sectionsRow}>
+            {WORKOUT_SECTIONS.map((sec) => {
+              const isUnlocked = userHasCompletedToday || unlockedSections.includes(sec.id);
+              const isActive = activeSectionId === sec.id && !userHasCompletedToday;
+              const isDone = userHasCompletedToday || (unlockedSections.includes(sec.id) && sec.id < activeSectionId);
+
               return (
-                <View
+                <Pressable
                   key={sec.id}
+                  onPress={() => {
+                    if (isUnlocked && !userHasCompletedToday) {
+                      Haptics.selectionAsync();
+                      setActiveSectionId(sec.id);
+                      setCurrentQuestionIdx(0);
+                    }
+                  }}
                   style={[
                     styles.sectionChip,
-                    isSecActive && styles.sectionChipActive,
-                    isSecDone && styles.sectionChipDone,
+                    isActive && styles.sectionChipActive,
+                    isDone && styles.sectionChipDone,
+                    !isUnlocked && styles.sectionChipLocked,
                   ]}
                 >
                   <MaterialCommunityIcons
-                    name={isSecDone ? 'check-circle' : isSecActive ? 'target' : 'lock-outline'}
-                    size={16}
-                    color={isSecDone ? '#84cc16' : isSecActive ? '#ffffff' : '#64748b'}
+                    name={isDone ? 'check-circle' : isActive ? 'flash' : 'lock-outline'}
+                    size={15}
+                    color={isDone ? '#84cc16' : isActive ? '#22c55e' : '#64748b'}
                   />
                   <Text
                     style={[
                       styles.sectionChipText,
-                      isSecActive && styles.sectionChipTextActive,
-                      isSecDone && styles.sectionChipTextDone,
+                      isActive && styles.sectionChipTextActive,
+                      isDone && styles.sectionChipTextDone,
+                      !isUnlocked && styles.sectionChipTextLocked,
                     ]}
                   >
-                    {sec.title.toUpperCase()}
+                    {sec.title}
                   </Text>
-                </View>
+                  {isActive && <View style={styles.activeUnderline} />}
+                </Pressable>
               );
             })}
           </View>
-        </Animated.View>
 
-        {/* ── 3. ACTIVE QUESTION CARD OR WORKOUT FINISHED SUMMARY ── */}
-        {isCompleted ? (
-          <Animated.View entering={FadeInUp.duration(300)} style={styles.completedBox}>
-            <View style={styles.completedIconCircle}>
-              <MaterialCommunityIcons name="check-bold" size={36} color="#84cc16" />
-            </View>
-            <Text style={styles.completedTitle}>Today's Workout Complete</Text>
-            <Text style={styles.completedSub}>
-              You have completed all 4 sections for {formattedDate}. Your streak is locked in!
-            </Text>
-            <Pressable
-              style={styles.returnBtn}
-              onPress={async () => {
-                await useUserStore.getState().loadProfile();
-                router.push('/(tabs)');
-              }}
-            >
-              <Text style={styles.returnBtnText}>Return to Arena</Text>
-            </Pressable>
-          </Animated.View>
-        ) : activeQuestion ? (
-          <Animated.View entering={FadeInUp.duration(300)} style={styles.questionCard}>
-            {/* Active Section Info Header */}
-            <View style={styles.cardHeaderRow}>
-              <View style={styles.cardDisciplineBadge}>
-                <Text style={styles.cardDisciplineText}>
-                  SECTION {activeSectionIdx + 1}/4: {activeSection?.title.toUpperCase()}
-                </Text>
+          {/* ── INTERACTIVE QUESTION CARD OR WORKOUT COMPLETED SUMMARY CARD ── */}
+          {userHasCompletedToday ? (
+            <View style={styles.completedCard}>
+              <View style={styles.completedIconRing}>
+                <MaterialCommunityIcons name="check-bold" size={32} color="#22c55e" />
               </View>
-              <Text style={styles.questionCounter}>
-                Q{questionInSecIdx + 1}/{activeSection?.questionCount}
+              <Text style={styles.completedTitleText}>Today's Workout Complete!</Text>
+              <Text style={styles.completedSubtitleText}>
+                You completed all 4 sections for {formattedDate}. Your streak is secured!
               </Text>
-            </View>
-            <Text style={styles.sectionSubtitleText}>{activeSection?.subtitle}</Text>
 
-            {/* Prompt Box */}
-            <View style={styles.promptBox}>
-              <Text style={styles.operand1Text}>{activeQuestion.operand1}</Text>
-              {activeQuestion.operator ? (
-                <Text style={styles.operatorText}>
-                  {activeQuestion.operator} {activeQuestion.operand2}
-                </Text>
-              ) : null}
-            </View>
-
-            {/* Inline Answer Feedback Banner */}
-            {feedback !== null && (
-              <Animated.View entering={FadeInDown.duration(200)} style={[styles.feedbackBanner, feedback === 'correct' ? styles.feedbackBannerCorrect : styles.feedbackBannerWrong]}>
-                <MaterialCommunityIcons
-                  name={feedback === 'correct' ? 'check-circle' : 'close-circle'}
-                  size={18}
-                  color={feedback === 'correct' ? '#4ade80' : '#f87171'}
-                />
-                <Text style={[styles.feedbackBannerText, feedback === 'correct' ? styles.feedbackTextCorrect : styles.feedbackTextWrong]}>
-                  {feedback === 'correct'
-                    ? '✓ Correct! +10 XP'
-                    : `✕ Almost — correct answer was ${activeQuestion.answer}`}
-                </Text>
-              </Animated.View>
-            )}
-
-            {/* Option Buttons */}
-            <View style={styles.optionsGrid}>
-              {activeQuestion.options.map((opt: number, i: number) => {
-                const isSelected = selectedOption === opt;
-                const isCorrectTarget = Number(opt) === Number(activeQuestion.answer);
-                const isSelectedCorrect = feedback === 'correct' && isSelected;
-                const isSelectedWrong = feedback === 'wrong' && isSelected;
-                const isTargetHighlight = feedback === 'wrong' && isCorrectTarget;
-
-                return (
-                  <Pressable
-                    key={i}
-                    style={[
-                      styles.optionBtn,
-                      isSelectedCorrect && styles.optionBtnCorrect,
-                      isSelectedWrong && styles.optionBtnWrong,
-                      isTargetHighlight && styles.optionBtnTargetHighlight,
-                    ]}
-                    onPress={() => handleOptionPress(opt)}
-                    disabled={feedback !== null || isSubmitting}
-                  >
-                    <View style={styles.optionContentRow}>
-                      <Text
-                        style={[
-                          styles.optionText,
-                          (isSelectedCorrect || isTargetHighlight) && styles.optionTextCorrect,
-                          isSelectedWrong && styles.optionTextWrong,
-                        ]}
-                      >
-                        {opt}
-                      </Text>
-                      {isSelectedCorrect ? (
-                        <MaterialCommunityIcons name="check-circle" size={18} color="#4ade80" />
-                      ) : isSelectedWrong ? (
-                        <MaterialCommunityIcons name="close-circle" size={18} color="#f87171" />
-                      ) : isTargetHighlight ? (
-                        <MaterialCommunityIcons name="check" size={18} color="#4ade80" />
-                      ) : null}
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </Animated.View>
-        ) : null}
-      </ScrollView>
-
-      {/* Full-Screen Celebration Completion Modal Overlay */}
-      <Modal visible={showCompletionModal} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <Animated.View entering={FadeInUp.duration(350)} style={styles.modalCard}>
-            {/* Confetti Particle Orbs */}
-            <View style={styles.particleContainer} pointerEvents="none">
-              <View style={[styles.confettiOrb, { top: -10, left: 20, backgroundColor: '#84cc16' }]} />
-              <View style={[styles.confettiOrb, { top: 15, right: 30, backgroundColor: '#f97316' }]} />
-              <View style={[styles.confettiOrb, { top: 40, left: 60, backgroundColor: '#38bdf8' }]} />
-            </View>
-
-            <View style={styles.modalTrophyRing}>
-              <MaterialCommunityIcons name="trophy-award" size={48} color="#84cc16" />
-            </View>
-            <Text style={styles.modalTitle}>DAILY WORKOUT COMPLETE!</Text>
-            <Text style={styles.modalSub}>
-              You completed all 4 sections for today and secured your streak.
-            </Text>
-
-            {/* Level & Level-Up Indicator */}
-            {(() => {
-              const currentXp = profile.brainPoints || 0;
-              const lvl = getLevel(currentXp);
-              const progress = getLevelProgress(currentXp);
-              const xpNeeded = getXpRemainingForNextLevel(currentXp);
-
-              return (
-                <View style={styles.levelCard}>
-                  <View style={styles.levelHeaderRow}>
-                    <View style={styles.levelBadgeChip}>
-                      <MaterialCommunityIcons name="star-circle" size={16} color="#84cc16" />
-                      <Text style={styles.levelBadgeText}>LEVEL {lvl}</Text>
-                    </View>
-                    <Text style={styles.xpRemainingText}>{xpNeeded} XP to Level {lvl + 1}</Text>
-                  </View>
-                  <View style={styles.levelTrack}>
-                    <View style={[styles.levelFill, { width: `${Math.round(progress * 100)}%` }]} />
-                  </View>
+              <View style={styles.completedMetricsRow}>
+                <View style={styles.metricChip}>
+                  <MaterialCommunityIcons name="hexagon-outline" size={16} color="#84cc16" />
+                  <Text style={styles.metricChipText}>+250 XP</Text>
                 </View>
-              );
-            })()}
-
-            {/* Metrics Grid (XP, Streak, Accuracy %, Duration) */}
-            <View style={styles.rewardSummaryRow}>
-              <View style={styles.rewardItem}>
-                <MaterialCommunityIcons name="hexagon-outline" size={16} color="#84cc16" />
-                <Text style={styles.rewardItemText}>+250 XP</Text>
+                <View style={styles.metricChip}>
+                  <MaterialCommunityIcons name="star-circle-outline" size={16} color="#facc15" />
+                  <Text style={styles.metricChipText}>+50 COINS</Text>
+                </View>
+                <View style={styles.metricChip}>
+                  <MaterialCommunityIcons name="fire" size={16} color="#f97316" />
+                  <Text style={styles.metricChipText}>🔥 {profile.streak || 1} Streak</Text>
+                </View>
               </View>
 
-              <View style={styles.rewardItem}>
-                <MaterialCommunityIcons name="fire" size={16} color="#f97316" />
-                <Text style={styles.rewardItemText}>
-                  🔥 {rewardResult?.newStreak ?? (profile.streak > 0 ? profile.streak : 1)} Streak
+              <Pressable
+                style={styles.returnArenaBtn}
+                onPress={() => router.push('/(tabs)')}
+              >
+                <Text style={styles.returnArenaText}>Return to Arena</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.questionCard}>
+              <View style={styles.cardTopHeaderRow}>
+                <View style={styles.sectionBadgePill}>
+                  <Text style={styles.sectionBadgeText}>
+                    SECTION {currentSection.id}/4: {currentSection.title}
+                  </Text>
+                </View>
+                <Text style={styles.questionCounterText}>
+                  <Text style={styles.qGreenText}>Q{currentQuestionIdx + 1}</Text>/{currentSection.questions.length}
                 </Text>
               </View>
 
-              <View style={styles.rewardItem}>
-                <MaterialCommunityIcons name="target" size={16} color="#38bdf8" />
-                <Text style={styles.rewardItemText}>
-                  {totalAnswersCount > 0
-                    ? `${Math.round((correctAnswersCount / totalAnswersCount) * 100)}% Acc`
-                    : '100% Acc'}
+              <Text style={styles.sectionSubText}>{currentSection.subtitle}</Text>
+
+              {/* Prompt Box */}
+              <View style={styles.promptDisplayBox}>
+                <Text style={styles.promptFormulaText}>
+                  {activeQuestion.prompt}
+                  <Text style={styles.greenTargetText}>{activeQuestion.target}</Text>
                 </Text>
+
+                <View style={styles.gridDotsGraphic} pointerEvents="none">
+                  {[...Array(12)].map((_, i) => (
+                    <View key={i} style={styles.dotSingle} />
+                  ))}
+                </View>
               </View>
 
-              <View style={styles.rewardItem}>
-                <MaterialCommunityIcons name="clock-outline" size={16} color="#a78bfa" />
-                <Text style={styles.rewardItemText}>
-                  {(() => {
-                    const elapsedSec = Math.max(1, Math.floor((Date.now() - workoutStartTime) / 1000));
-                    const mins = Math.floor(elapsedSec / 60);
-                    const secs = elapsedSec % 60;
-                    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-                  })()}
-                </Text>
+              {/* Option Buttons (2x2 Grid) */}
+              <View style={styles.optionsGridContainer}>
+                {activeQuestion.options.map((optionNum, i) => {
+                  const isSelected = selectedOption === optionNum;
+                  const isRight = feedback === 'correct' && isSelected;
+                  const isWrong = feedback === 'wrong' && isSelected;
+
+                  return (
+                    <Pressable
+                      key={i}
+                      disabled={feedback !== null || userHasCompletedToday}
+                      onPress={() => handleOptionPress(optionNum)}
+                      style={[
+                        styles.optionChoiceBtn,
+                        isRight && styles.optionChoiceRight,
+                        isWrong && styles.optionChoiceWrong,
+                      ]}
+                    >
+                      <Text style={[styles.optionChoiceText, isRight && styles.textRight, isWrong && styles.textWrong]}>
+                        {optionNum}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
             </View>
+          )}
+        </ScrollView>
 
-            <Pressable
-              style={styles.modalCtaBtn}
-              onPress={() => {
-                setShowCompletionModal(false);
-                router.push('/(tabs)');
-              }}
-            >
-              <Text style={styles.modalCtaText}>Continue</Text>
-            </Pressable>
-          </Animated.View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+        {/* ── WORKOUT COMPLETION CELEBRATION MODAL ── */}
+        <Modal visible={showCompletionModal} transparent animationType="fade">
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCardContainer}>
+              <View style={styles.modalTrophyRing}>
+                <MaterialCommunityIcons name="trophy-award" size={44} color="#22c55e" />
+              </View>
+
+              <Text style={styles.modalTitleText}>DAILY WORKOUT COMPLETE!</Text>
+              <Text style={styles.modalSubText}>
+                You completed all 4 sections for today and secured your streak.
+              </Text>
+
+              <View style={styles.rewardSummaryRow}>
+                <View style={styles.rewardMetricItem}>
+                  <MaterialCommunityIcons name="hexagon-outline" size={16} color="#84cc16" />
+                  <Text style={styles.metricText}>+250 XP</Text>
+                </View>
+
+                <View style={styles.rewardMetricItem}>
+                  <MaterialCommunityIcons name="star-circle-outline" size={16} color="#facc15" />
+                  <Text style={styles.metricText}>+50 COINS</Text>
+                </View>
+
+                <View style={styles.rewardMetricItem}>
+                  <MaterialCommunityIcons name="fire" size={16} color="#f97316" />
+                  <Text style={styles.metricText}>🔥 {profile.streak || 1} Streak</Text>
+                </View>
+              </View>
+
+              <Pressable
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setShowCompletionModal(false);
+                }}
+                style={styles.modalContinueBtn}
+              >
+                <Text style={styles.modalContinueText}>Continue</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#090b10' },
-  loadingArea: { flex: 1, backgroundColor: '#090b10', alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { color: '#94a3b8', fontSize: 16, fontWeight: '600' },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 95 },
+  root: {
+    flex: 1,
+    backgroundColor: '#07090e',
+  },
+  safeArea: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 120,
+  },
 
-  // Header
-  headerBlock: { marginBottom: 20 },
-  headerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
-  dateTag: { color: '#84cc16', fontSize: 12, fontWeight: '800', letterSpacing: 1 },
-  headerTitle: { color: '#ffffff', fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
-  streakBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#171920', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(249, 115, 22, 0.3)' },
-  streakText: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
-  rewardPreviewRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(132, 204, 22, 0.1)', alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(132, 204, 22, 0.2)' },
-  rewardPreviewText: { color: '#84cc16', fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
-  streakNoticeBox: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(56, 189, 248, 0.08)', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(56, 189, 248, 0.2)' },
-  streakNoticeText: { color: '#38bdf8', fontSize: 11, fontWeight: '600', flex: 1, lineHeight: 15 },
+  /* Header Section */
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  headerLeft: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  dateTagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  dateTagText: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 12,
+    color: '#84cc16',
+    letterSpacing: 0.5,
+  },
+  mainTitle: {
+    fontFamily: 'Outfit_900Black',
+    fontSize: 32,
+    color: '#ffffff',
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13.5,
+    color: '#94a3b8',
+    lineHeight: 18,
+  },
+  streakPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#131824',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 4,
+  },
+  streakPillText: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 12.5,
+    color: '#ffffff',
+  },
 
-  // Tracker
-  sectionsTrackerContainer: { marginBottom: 24 },
-  sectionTrackerTitle: { color: '#64748b', fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 10 },
-  sectionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  sectionChip: { flex: 1, minWidth: '45%', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#121620', paddingVertical: 10, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' },
-  sectionChipActive: { borderColor: '#84cc16', backgroundColor: 'rgba(132, 204, 22, 0.12)' },
-  sectionChipDone: { backgroundColor: 'rgba(132, 204, 22, 0.06)' },
-  sectionChipText: { color: '#64748b', fontSize: 12, fontWeight: '800' },
-  sectionChipTextActive: { color: '#ffffff' },
-  sectionChipTextDone: { color: '#84cc16' },
+  /* Reward Banner */
+  rewardBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#081d12',
+    borderColor: '#22c55e',
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+  },
+  rewardLeftContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  trophyIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#166534',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rewardHeaderTag: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 11,
+    color: '#4ade80',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  rewardValuesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  xpText: {
+    fontFamily: 'Outfit_900Black',
+    fontSize: 20,
+    color: '#ffffff',
+  },
+  dividerText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 16,
+    color: '#22c55e',
+  },
+  coinsText: {
+    fontFamily: 'Outfit_900Black',
+    fontSize: 20,
+    color: '#facc15',
+  },
+  brainGraphicWrap: {
+    width: 100,
+    height: 75,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
-  // Question Card
-  questionCard: { backgroundColor: '#121622', borderRadius: 24, padding: 24, borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.1)' },
-  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  cardDisciplineBadge: { backgroundColor: 'rgba(132, 204, 22, 0.15)', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 10 },
-  cardDisciplineText: { color: '#84cc16', fontSize: 11, fontWeight: '800' },
-  questionCounter: { color: '#94a3b8', fontSize: 13, fontWeight: '700' },
-  sectionSubtitleText: { color: '#64748b', fontSize: 13, marginBottom: 24 },
-  promptBox: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#090b10', borderRadius: 20, paddingVertical: 28, paddingHorizontal: 16, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.06)' },
-  operand1Text: { fontSize: 32, fontWeight: '900', color: '#ffffff', textAlign: 'center' },
-  operatorText: { fontSize: 32, fontWeight: '900', color: '#84cc16', textAlign: 'center', marginTop: 4 },
+  /* Notice Box */
+  noticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#0b162c',
+    borderColor: '#1e3a8a',
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 24,
+  },
+  infoIconCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#3b82f6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noticeText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12.5,
+    color: '#94a3b8',
+    flex: 1,
+    lineHeight: 17,
+  },
 
-  // Inline Feedback Banner
-  feedbackBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 14, marginBottom: 16, borderWidth: 1 },
-  feedbackBannerCorrect: { backgroundColor: 'rgba(74, 222, 128, 0.12)', borderColor: '#4ade80' },
-  feedbackBannerWrong: { backgroundColor: 'rgba(248, 113, 113, 0.12)', borderColor: '#f87171' },
-  feedbackBannerText: { fontSize: 13, fontWeight: '800' },
-  feedbackTextCorrect: { color: '#4ade80' },
-  feedbackTextWrong: { color: '#f87171' },
+  /* Workout Sections Row */
+  sectionTrackerTitle: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 12,
+    color: '#64748b',
+    letterSpacing: 1,
+    marginBottom: 12,
+  },
+  sectionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 24,
+  },
+  sectionChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#0f172a',
+    borderColor: '#1e293b',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    position: 'relative',
+  },
+  sectionChipActive: {
+    backgroundColor: '#0d2216',
+    borderColor: '#22c55e',
+  },
+  sectionChipDone: {
+    backgroundColor: 'rgba(132, 204, 22, 0.1)',
+    borderColor: '#84cc16',
+  },
+  sectionChipLocked: {
+    opacity: 0.6,
+  },
+  sectionChipText: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 11,
+    color: '#84cc16',
+  },
+  sectionChipTextActive: {
+    color: '#22c55e',
+  },
+  sectionChipTextDone: {
+    color: '#84cc16',
+  },
+  sectionChipTextLocked: {
+    color: '#64748b',
+  },
+  activeUnderline: {
+    position: 'absolute',
+    bottom: -1,
+    width: 24,
+    height: 3,
+    backgroundColor: '#22c55e',
+    borderRadius: 2,
+  },
 
-  optionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  optionBtn: { width: '47%', height: 60, backgroundColor: '#181e2e', borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.1)', paddingHorizontal: 12 },
-  optionContentRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%' },
-  optionBtnCorrect: { backgroundColor: 'rgba(74, 222, 128, 0.18)', borderColor: '#4ade80' },
-  optionBtnWrong: { backgroundColor: 'rgba(248, 113, 113, 0.18)', borderColor: '#f87171' },
-  optionBtnTargetHighlight: { backgroundColor: 'rgba(74, 222, 128, 0.12)', borderColor: '#4ade80' },
-  optionText: { color: '#ffffff', fontSize: 22, fontWeight: '800' },
-  optionTextCorrect: { color: '#4ade80' },
-  optionTextWrong: { color: '#f87171' },
+  /* Completed Workout Card */
+  completedCard: {
+    backgroundColor: '#0b1220',
+    borderColor: '#22c55e',
+    borderWidth: 1.5,
+    borderRadius: 24,
+    padding: 28,
+    alignItems: 'center',
+  },
+  completedIconRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  completedTitleText: {
+    fontFamily: 'Outfit_900Black',
+    fontSize: 22,
+    color: '#ffffff',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  completedSubtitleText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  completedMetricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    width: '100%',
+    marginBottom: 24,
+  },
+  metricChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#111827',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  metricChipText: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 13,
+    color: '#ffffff',
+  },
+  returnArenaBtn: {
+    width: '100%',
+    height: 52,
+    backgroundColor: '#22c55e',
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  returnArenaText: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 16,
+    color: '#052e16',
+  },
 
-  // Completed Box
-  completedBox: { backgroundColor: '#121622', borderRadius: 24, padding: 32, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(132, 204, 22, 0.3)' },
-  completedIconCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(132, 204, 22, 0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  completedTitle: { fontSize: 22, fontWeight: '900', color: '#ffffff', marginBottom: 8, textAlign: 'center' },
-  completedSub: { fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 22, marginBottom: 24 },
-  returnBtn: { width: '100%', height: 50, backgroundColor: '#84cc16', borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  returnBtnText: { fontSize: 16, fontWeight: '800', color: '#0d0e12' },
+  /* Interactive Question Card */
+  questionCard: {
+    backgroundColor: '#0b1220',
+    borderColor: '#1e293b',
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 20,
+  },
+  cardTopHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  sectionBadgePill: {
+    backgroundColor: '#0d2416',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  sectionBadgeText: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 11.5,
+    color: '#22c55e',
+  },
+  questionCounterText: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 15,
+    color: '#64748b',
+  },
+  qGreenText: {
+    color: '#22c55e',
+  },
+  sectionSubText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13.5,
+    color: '#94a3b8',
+    marginBottom: 20,
+  },
 
-  // Modal
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(6, 8, 16, 0.9)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
-  modalCard: { width: '100%', backgroundColor: '#121622', borderRadius: 28, padding: 28, alignItems: 'center', borderWidth: 1.5, borderColor: 'rgba(132, 204, 22, 0.4)', position: 'relative' },
-  particleContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  confettiOrb: { position: 'absolute', width: 8, height: 8, borderRadius: 4, opacity: 0.8 },
-  modalTrophyRing: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(132, 204, 22, 0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  modalTitle: { fontSize: 22, fontWeight: '900', color: '#ffffff', marginBottom: 6, textAlign: 'center', letterSpacing: 0.5 },
-  modalSub: { fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 20, marginBottom: 16 },
-  levelCard: { width: '100%', backgroundColor: 'rgba(255, 255, 255, 0.04)', borderRadius: 16, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' },
-  levelHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  levelBadgeChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(132, 204, 22, 0.15)', paddingVertical: 3, paddingHorizontal: 8, borderRadius: 10 },
-  levelBadgeText: { color: '#84cc16', fontSize: 12, fontWeight: '800' },
-  xpRemainingText: { color: '#94a3b8', fontSize: 11, fontWeight: '600' },
-  levelTrack: { width: '100%', height: 6, backgroundColor: 'rgba(255, 255, 255, 0.1)', borderRadius: 3, overflow: 'hidden' },
-  levelFill: { height: '100%', backgroundColor: '#84cc16', borderRadius: 3 },
-  rewardSummaryRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, width: '100%', marginBottom: 20 },
-  rewardItem: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255, 255, 255, 0.06)', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 14 },
-  rewardItemText: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
-  modalCtaBtn: { width: '100%', height: 52, backgroundColor: '#84cc16', borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  modalCtaText: { fontSize: 16, fontWeight: '900', color: '#0d0e12' },
+  /* Prompt Box */
+  promptDisplayBox: {
+    backgroundColor: '#080c16',
+    borderRadius: 16,
+    paddingVertical: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  promptFormulaText: {
+    fontFamily: 'Outfit_900Black',
+    fontSize: 34,
+    color: '#ffffff',
+  },
+  greenTargetText: {
+    color: '#22c55e',
+  },
+  gridDotsGraphic: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+    bottom: 12,
+    width: 40,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    opacity: 0.25,
+    alignContent: 'center',
+  },
+  dotSingle: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#22c55e',
+  },
+
+  /* Options Grid */
+  optionsGridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  optionChoiceBtn: {
+    width: '48%',
+    height: 56,
+    backgroundColor: '#111827',
+    borderColor: '#1e293b',
+    borderWidth: 1,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  optionChoiceRight: {
+    backgroundColor: 'rgba(34, 197, 94, 0.2)',
+    borderColor: '#22c55e',
+  },
+  optionChoiceWrong: {
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    borderColor: '#ef4444',
+  },
+  optionChoiceText: {
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 22,
+    color: '#ffffff',
+  },
+  textRight: {
+    color: '#22c55e',
+  },
+  textWrong: {
+    color: '#ef4444',
+  },
+
+  /* Modal */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCardContainer: {
+    width: '100%',
+    backgroundColor: '#0b1220',
+    borderColor: '#22c55e',
+    borderWidth: 1.5,
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+  },
+  modalTrophyRing: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  modalTitleText: {
+    fontFamily: 'Outfit_900Black',
+    fontSize: 22,
+    color: '#ffffff',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  modalSubText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  rewardSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 24,
+  },
+  rewardMetricItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#111827',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  metricText: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 13,
+    color: '#ffffff',
+  },
+  modalContinueBtn: {
+    width: '100%',
+    height: 52,
+    backgroundColor: '#22c55e',
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalContinueText: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 16,
+    color: '#052e16',
+  },
 });

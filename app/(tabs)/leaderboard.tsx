@@ -1,36 +1,112 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Modal } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Modal, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { useFocusEffect } from 'expo-router';
 
 import { colors } from '../../src/theme';
 import { CortexCard } from '../../src/components/CortexCard';
 import { CortexButton } from '../../src/components/CortexButton';
-import { PodiumCard } from '../../src/components/PodiumCard';
+import { PodiumCard, PodiumUser } from '../../src/components/PodiumCard';
+import { useUserStore } from '../../src/store/userStore';
+import { supabase } from '../../lib/supabase';
 
-interface LeaderboardItem {
+interface LeaderboardUser {
+  id: string;
   rank: number;
   name: string;
   xp: number;
+  streak: number;
   avatarInitial: string;
-  isUser?: boolean;
+  isUser: boolean;
 }
-
-const LEADERBOARD_LIST: LeaderboardItem[] = [
-  { rank: 4, name: 'Lucas', xp: 2280, avatarInitial: 'L' },
-  { rank: 5, name: 'Sophia', xp: 2210, avatarInitial: 'S' },
-  { rank: 6, name: 'Ethan', xp: 2190, avatarInitial: 'E' },
-  { rank: 7, name: 'Chloe', xp: 2150, avatarInitial: 'C' },
-  { rank: 8, name: 'Liam', xp: 2120, avatarInitial: 'L' },
-  { rank: 9, name: 'Emma', xp: 2090, avatarInitial: 'E' },
-  { rank: 10, name: 'Noah', xp: 2070, avatarInitial: 'N' },
-  { rank: 14, name: 'You (Afnan)', xp: 2040, avatarInitial: 'A', isUser: true },
-  { rank: 15, name: 'Rohan', xp: 2010, avatarInitial: 'R' },
-];
 
 export default function LeaderboardScreen() {
   const [tab, setTab] = useState<'weekly' | 'global'>('weekly');
   const [showLegendModal, setShowLegendModal] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [realUsers, setRealUsers] = useState<LeaderboardUser[]>([]);
+
+  const profile = useUserStore((s) => s.profile);
+
+  const loadRealLeaderboard = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, username, xp, streak')
+        .order('xp', { ascending: false })
+        .limit(50);
+
+      if (error || !data || data.length === 0) {
+        // If 0 real users in Supabase, show current profile if available, otherwise empty
+        if (profile?.isLoggedIn && profile?.name) {
+          setRealUsers([
+            {
+              id: 'local_user',
+              rank: 1,
+              name: profile.name,
+              xp: profile.brainPoints || 0,
+              streak: profile.streak || 0,
+              avatarInitial: (profile.name[0] || 'U').toUpperCase(),
+              isUser: true,
+            },
+          ]);
+        } else {
+          setRealUsers([]);
+        }
+        return;
+      }
+
+      const mapped: LeaderboardUser[] = data.map((item, index) => {
+        const isSelf =
+          item.username === profile?.name ||
+          (profile?.email && item.username === profile.email.split('@')[0]);
+
+        return {
+          id: item.id || `user_${index}`,
+          rank: index + 1,
+          name: item.username || `Athlete #${index + 1}`,
+          xp: item.xp ?? 0,
+          streak: item.streak ?? 0,
+          avatarInitial: (item.username || 'A')[0].toUpperCase(),
+          isUser: Boolean(isSelf),
+        };
+      });
+
+      setRealUsers(mapped);
+    } catch (e) {
+      console.warn('Failed to load leaderboard:', e);
+      setRealUsers([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [profile]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadRealLeaderboard();
+    }, [loadRealLeaderboard])
+  );
+
+  const top3: PodiumUser[] = realUsers.slice(0, 3).map((u) => ({
+    rank: u.rank,
+    name: u.name,
+    xp: u.xp,
+  }));
+
+  const rankList = realUsers.slice(3);
+  const currentUserEntry = realUsers.find((u) => u.isUser);
+
+  const displayUserRank = currentUserEntry
+    ? `#${currentUserEntry.rank}`
+    : realUsers.length > 0
+    ? `#${realUsers.length + 1}`
+    : '#1';
+
+  const displayUserXp = profile.brainPoints || 0;
+  const displayUserName = profile.name || 'You';
 
   return (
     <View style={styles.root}>
@@ -82,40 +158,57 @@ export default function LeaderboardScreen() {
             </Text>
           </CortexCard>
 
-          {/* ── CLEAN TOP RANKINGS LIST ── */}
-          <PodiumCard />
+          {/* ── TOP 3 PODIUM CARD (REAL USERS) ── */}
+          {loading ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator color="#84cc16" size="large" />
+              <Text style={styles.loadingText}>Fetching real leaderboard...</Text>
+            </View>
+          ) : (
+            <PodiumCard topUsers={top3} />
+          )}
 
-          {/* ── RANK LIST ── */}
-          <View style={styles.listContainer}>
-            {LEADERBOARD_LIST.map((item) => {
-              if (item.isUser) return null;
-
-              return (
-                <View key={item.rank} style={styles.listItem}>
-                  <Text style={styles.rankNumText}>{item.rank}</Text>
-                  <View style={styles.listAvatar}>
-                    <Text style={styles.listAvatarText}>{item.avatarInitial}</Text>
-                  </View>
-                  <Text style={styles.listName}>{item.name}</Text>
-                  <Text style={styles.listXp}>{item.xp.toLocaleString()} XP</Text>
+          {/* ── RANK LIST FOR REAL USERS (RANKS 4+) ── */}
+          {!loading && (
+            <View style={styles.listContainer}>
+              {rankList.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <MaterialCommunityIcons name="trophy-outline" size={32} color={colors.textSecondary} />
+                  <Text style={styles.emptyTitle}>
+                    {realUsers.length === 0 ? 'No players on the leaderboard yet' : 'Top 3 positions filled'}
+                  </Text>
+                  <Text style={styles.emptySub}>
+                    Real players will automatically appear here as they gain XP!
+                  </Text>
                 </View>
-              );
-            })}
-          </View>
+              ) : (
+                rankList.map((item) => (
+                  <View key={item.id} style={styles.listItem}>
+                    <Text style={styles.rankNumText}>#{item.rank}</Text>
+                    <View style={styles.listAvatar}>
+                      <Text style={styles.listAvatarText}>{item.avatarInitial}</Text>
+                    </View>
+                    <Text style={styles.listName}>{item.name}</Text>
+                    <Text style={styles.listXp}>{item.xp.toLocaleString()} XP</Text>
+                  </View>
+                ))
+              )}
+            </View>
+          )}
         </ScrollView>
 
-        {/* ── STICKY "YOUR RANK" PANE AT BOTTOM ── */}
+        {/* ── STICKY "YOUR REAL RANK" PANE AT BOTTOM ── */}
         <View style={styles.stickyRankPane}>
           <View style={styles.stickyRow}>
-            <Text style={styles.stickyRankNum}>#14</Text>
+            <Text style={styles.stickyRankNum}>{displayUserRank}</Text>
             <View style={styles.stickyAvatar}>
-              <Text style={styles.stickyAvatarText}>A</Text>
+              <Text style={styles.stickyAvatarText}>{(displayUserName[0] || 'U').toUpperCase()}</Text>
             </View>
             <View style={styles.stickyMeta}>
-              <Text style={styles.stickyName}>You (Afnan)</Text>
-              <Text style={styles.stickySub}>Gold Division • 17d Streak</Text>
+              <Text style={styles.stickyName}>{displayUserName} (You)</Text>
+              <Text style={styles.stickySub}>{profile.streak || 0}d Streak</Text>
             </View>
-            <Text style={styles.stickyXp}>2,040 XP</Text>
+            <Text style={styles.stickyXp}>{displayUserXp.toLocaleString()} XP</Text>
           </View>
         </View>
 
@@ -169,7 +262,6 @@ const styles = StyleSheet.create({
     paddingTop: 24,
     paddingBottom: 170,
   },
-
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -188,7 +280,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     letterSpacing: -0.4,
   },
-
   toggleTrack: {
     flexDirection: 'row',
     backgroundColor: colors.surfaceAlt,
@@ -213,7 +304,6 @@ const styles = StyleSheet.create({
   toggleTextActive: {
     color: colors.textPrimary,
   },
-
   legendCard: {
     marginBottom: 16,
   },
@@ -236,13 +326,43 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textPrimary,
   },
-
+  loadingBox: {
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 8,
+  },
   listContainer: {
     backgroundColor: colors.surface,
     borderRadius: 20,
     paddingHorizontal: 16,
+    paddingVertical: 12,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+    gap: 6,
+  },
+  emptyTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 15,
+    color: colors.textPrimary,
+    marginTop: 4,
+  },
+  emptySub: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: 16,
   },
   listItem: {
     flexDirection: 'row',
@@ -256,7 +376,7 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
     fontSize: 14,
     color: colors.textSecondary,
-    width: 28,
+    width: 32,
   },
   listAvatar: {
     width: 32,
@@ -284,7 +404,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textPrimary,
   },
-
   stickyRankPane: {
     position: 'absolute',
     bottom: 84,
@@ -348,7 +467,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textPrimary,
   },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.65)',

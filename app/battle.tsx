@@ -177,6 +177,16 @@ export default function BattleScreen() {
               style={styles.idleCta}
             />
           </View>
+
+          <CortexTutorialModal
+            visible={showTutorial}
+            config={TUTORIAL_CONFIGS.sprint}
+            onClose={() => setShowTutorial(false)}
+            onCtaPress={() => {
+              setShowTutorial(false);
+              battle.startMatchmaking(battle.user.id, battle.user.rating);
+            }}
+          />
         </SafeAreaView>
       </View>
     );
@@ -349,6 +359,12 @@ export default function BattleScreen() {
           </View>
         </View>
       </SafeAreaView>
+
+      <CortexTutorialModal
+        visible={showTutorial}
+        config={TUTORIAL_CONFIGS.sprint}
+        onClose={() => setShowTutorial(false)}
+      />
     </View>
   );
 }
@@ -365,7 +381,9 @@ const styles = StyleSheet.create({
   topBar: {
     paddingHorizontal: 20,
     paddingTop: 12,
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   closeBtn: {
     padding: 8,
