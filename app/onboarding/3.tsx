@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
@@ -20,34 +20,43 @@ export default function OnboardingScreen3() {
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.content}>
-          <Text style={styles.stepIndicator}>3 of 4</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.stepIndicator}>3 of 4</Text>
 
-          <View style={styles.centerSection}>
-            <Text style={styles.title}>Climb the leaderboard</Text>
-            <Text style={styles.description}>
-              Earn XP, improve your Elo rating, and track accuracy trends over time.
-            </Text>
+            <View style={styles.centerSection}>
+              <Text style={styles.title}>Climb the leaderboard</Text>
+              <Text style={styles.description}>
+                Earn XP, improve your Elo rating, and track accuracy trends over time.
+              </Text>
 
-            <View style={styles.inputWrap}>
-              <Text style={styles.inputLabel}>Choose your username</Text>
-              <TextInput
-                value={username}
-                onChangeText={setUsername}
-                placeholder="Enter username"
-                placeholderTextColor={colors.textMuted}
-                style={styles.textInput}
-                autoCapitalize="none"
-              />
+              <View style={styles.inputWrap}>
+                <Text style={styles.inputLabel}>Choose your username</Text>
+                <TextInput
+                  value={username}
+                  onChangeText={setUsername}
+                  placeholder="Enter username"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.textInput}
+                  autoCapitalize="none"
+                />
+              </View>
             </View>
-          </View>
 
-          <CortexButton
-            label="Continue"
-            onPress={handleNext}
-            variant="primary"
-          />
-        </View>
+            <CortexButton
+              label="Continue"
+              onPress={handleNext}
+              variant="primary"
+            />
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
   );
@@ -61,8 +70,8 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  content: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 24,
     paddingVertical: 20,
     justifyContent: 'space-between',

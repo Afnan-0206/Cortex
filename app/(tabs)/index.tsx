@@ -659,13 +659,29 @@ export default function ArenaHomeScreen() {
           </ScrollView>
         </Animated.View>
 
-        {/* ── 3. TIMER BADGE & DAILY CHALLENGES CARD (REAL INTERACTIVE) ── */}
-        <View style={styles.timerRow}>
-          <View style={styles.timerBadge}>
-            <MaterialCommunityIcons name="clock-outline" size={13} color="#9ca3af" />
-            <Text style={styles.timerText}>13:07</Text>
-          </View>
-        </View>
+        {/* ── 2-MINUTE SPRINT QUICK SESSION WIDGET ── */}
+        <Animated.View entering={FadeInDown.duration(200)} style={styles.quickSprintCard}>
+          <ScalePressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.push('/battle');
+            }}
+            style={styles.quickSprintContent}
+          >
+            <View style={styles.quickSprintLeft}>
+              <View style={styles.lightningIconRing}>
+                <MaterialCommunityIcons name="lightning-bolt" size={24} color="#facc15" />
+              </View>
+              <View>
+                <Text style={styles.quickSprintTitle}>2-MINUTE QUICK SPRINT</Text>
+                <Text style={styles.quickSprintSub}>Short 5-question math duel • Earn +100 XP</Text>
+              </View>
+            </View>
+            <View style={styles.playSprintBtn}>
+              <Text style={styles.playSprintBtnText}>PLAY NOW ⚡</Text>
+            </View>
+          </ScalePressable>
+        </Animated.View>
 
         <Animated.View entering={FadeInDown.duration(250)} style={styles.dailyCard}>
           <ScalePressable
@@ -1392,6 +1408,58 @@ const styles = StyleSheet.create({
   timerText: {
     fontFamily: 'Inter_700Bold',
     color: '#9ca3af',
+    fontSize: 11,
+  },
+
+  // ── QUICK SPRINT WIDGET ──
+  quickSprintCard: {
+    backgroundColor: '#171920',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#facc15',
+    padding: 14,
+    marginBottom: 12,
+  },
+  quickSprintContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  quickSprintLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  lightningIconRing: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(250, 204, 21, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickSprintTitle: {
+    fontFamily: 'Outfit_900Black',
+    color: '#ffffff',
+    fontSize: 13,
+    letterSpacing: 0.5,
+  },
+  quickSprintSub: {
+    fontFamily: 'Inter_500Medium',
+    color: '#9ca3af',
+    fontSize: 11,
+    marginTop: 1,
+  },
+  playSprintBtn: {
+    backgroundColor: '#facc15',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  playSprintBtnText: {
+    fontFamily: 'Outfit_900Black',
+    color: '#0d0e12',
     fontSize: 11,
   },
 

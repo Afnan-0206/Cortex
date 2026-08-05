@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -7,12 +7,14 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../../src/theme';
 import { CortexButton } from '../../src/components/CortexButton';
 import { analytics } from '../../lib/analytics';
+import { requestNotificationPermissions } from '../../lib/notifications';
 
 export default function OnboardingScreen4() {
   const router = useRouter();
 
-  const handleStartWorkout = () => {
+  const handleStartWorkout = async () => {
     analytics.track('onboarding_completed');
+    await requestNotificationPermissions();
     router.replace('/(tabs)');
   };
 
@@ -40,7 +42,11 @@ export default function OnboardingScreen4() {
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.content}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
           <Text style={styles.stepIndicator}>4 of 4</Text>
 
           <View style={styles.centerSection}>
@@ -67,7 +73,7 @@ export default function OnboardingScreen4() {
             onPress={handleStartWorkout}
             variant="primary"
           />
-        </View>
+        </ScrollView>
       </SafeAreaView>
     </View>
   );
@@ -81,8 +87,8 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  content: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 24,
     paddingVertical: 20,
     justifyContent: 'space-between',

@@ -1,10 +1,34 @@
+import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { analytics } from './analytics';
 
-export async function registerForPushNotificationsAsync(): Promise<string | null> {
-  let token: string | null = null;
+// Configure notification behavior for foreground notifications
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
+export const CHANNEL_ID = 'cortex_reminders';
+
+export async function setupAndroidChannel(): Promise<void> {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+      name: 'Daily Reminders',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#84cc16',
+      sound: 'default',
+    });
+  }
+}
+
+export async function requestNotificationPermissions(): Promise<boolean> {
   try {
-    const Notifications = require('expo-notifications');
+    await setupAndroidChannel();
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
 
@@ -13,79 +37,144 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       finalStatus = status;
     }
 
-    if (finalStatus !== 'granted') {
-      return null;
+    if (finalStatus === 'granted') {
+      await scheduleDailyReminders();
+      return true;
     }
-
-    const res = await Notifications.getExpoPushTokenAsync();
-    token = res.data;
-
-    if (Platform.OS === 'android') {
-      Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-      });
-    }
-  } catch (err) {
-    console.warn('Push notification setup skipped:', err);
-  }
-
-  return token;
-}
-
-export async function sendLocalNotification(title: string, body: string) {
-  try {
-    const Notifications = require('expo-notifications');
-    await Notifications.scheduleNotificationAsync({
-      content: { title, body, sound: 'default' },
-      trigger: null,
-    });
-  } catch (e) {
-    console.log(`[Notification fallback] ${title}: ${body}`);
+    return false;
+  } catch (error) {
+    console.warn('[Notifications] Permission request error:', error);
+    return false;
   }
 }
 
-export async function cancelStreakReminders() {
+export async function scheduleDailyReminders(): Promise<void> {
   try {
-    const Notifications = require('expo-notifications');
+    await setupAndroidChannel();
     await Notifications.cancelAllScheduledNotificationsAsync();
-  } catch (e) {
-    console.log('[Streak Reminder Canceled]');
-  }
-}
 
-// Scheduled Daily 8 PM Streak Reminder
-export async function setupStreakReminder(currentStreak: number = 17) {
-  try {
-    const Notifications = require('expo-notifications');
-    await Notifications.cancelAllScheduledNotificationsAsync();
+    // 1. 10:00 AM Reward Reminder
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: "🔥 Don't Break Your Streak!",
-        body: `You're on a ${currentStreak}-day streak. Play one battle to keep it alive!`,
-        sound: 'default',
-      },
+        title: '🎁 Daily Reward Ready!',
+        body: 'Log in to Cortex now to claim your daily login XP bonus.',
+        sound: true,
+        channelId: CHANNEL_ID,
+      } as any,
       trigger: {
-        hour: 20,
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: 10,
         minute: 0,
-        repeats: true,
       },
     });
-    analytics.track('streak_kept', { currentStreak });
-  } catch (e) {
-    console.log(`[Streak Reminder Scheduled for 8:00 PM] ${currentStreak}-day streak.`);
+
+    // 2. 6:00 PM Daily Missions Reminder
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '🎯 Daily Missions Available',
+        body: 'Complete your rotating daily missions to earn +40 XP each!',
+        sound: true,
+        channelId: CHANNEL_ID,
+      } as any,
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: 18,
+        minute: 0,
+      },
+    });
+
+    // 3. 8:00 PM Streak Preservation Reminder
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "🔥 Don't lose your streak!",
+        body: '2 minutes of Cortex today will keep your streak alive.',
+        sound: true,
+        channelId: CHANNEL_ID,
+      } as any,
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: 20,
+        minute: 0,
+      },
+    });
+  } catch (error) {
+    console.warn('[Notifications] Scheduling error:', error);
   }
 }
 
-export async function notifyMatchFound() {
-  await sendLocalNotification('Match Found', 'Open Cortex to start your 1v1 battle.');
+export async function ensureDailyRemindersScheduled(): Promise<void> {
+  try {
+    await setupAndroidChannel();
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status === 'granted') {
+      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+      if (scheduled.length === 0) {
+        await scheduleDailyReminders();
+      }
+    }
+  } catch (error) {
+    console.warn('[Notifications] Ensure scheduled error:', error);
+  }
 }
 
-export async function notifyStreakReminder() {
-  await sendLocalNotification('Streak Reminder', "You're one game away from keeping your streak!");
+export async function sendTestNotification(): Promise<boolean> {
+  try {
+    await setupAndroidChannel();
+    const { status } = await Notifications.getPermissionsAsync();
+    let finalStatus = status;
+    if (status !== 'granted') {
+      const res = await Notifications.requestPermissionsAsync();
+      finalStatus = res.status;
+    }
+
+    if (finalStatus !== 'granted') return false;
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '⚡ Cortex Test Notification',
+        body: 'Local notifications are working perfectly on your device!',
+        sound: true,
+        channelId: CHANNEL_ID,
+      } as any,
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 3,
+        repeats: false,
+      },
+    });
+    return true;
+  } catch (error) {
+    console.warn('[Notifications] Test notification error:', error);
+    return false;
+  }
 }
 
-export async function notifyRankUpdate(placesGained: number) {
-  await sendLocalNotification('Rank Update', `You moved up ${placesGained} places on the Global League!`);
+export async function setupStreakReminder(currentStreak?: number): Promise<void> {
+  await scheduleDailyReminders();
 }
+
+export async function cancelStreakReminders(): Promise<void> {
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+  } catch (error) {
+    console.warn('[Notifications] Cancel error:', error);
+  }
+}
+
+export async function notifyMatchFound(): Promise<void> {
+  try {
+    await setupAndroidChannel();
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '⚔️ AI Rival Found!',
+        body: 'Your 60s Sprint duel is ready to start.',
+        sound: true,
+        channelId: CHANNEL_ID,
+      } as any,
+      trigger: null,
+    });
+  } catch (error) {
+    console.warn('[Notifications] Match found notification error:', error);
+  }
+}
+

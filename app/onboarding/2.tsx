@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
@@ -13,7 +13,11 @@ export default function OnboardingScreen2() {
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.content}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
           <Text style={styles.stepIndicator}>2 of 3</Text>
 
           <View style={styles.centerSection}>
@@ -39,7 +43,7 @@ export default function OnboardingScreen2() {
             onPress={() => router.push('/onboarding/3')}
             variant="primary"
           />
-        </View>
+        </ScrollView>
       </SafeAreaView>
     </View>
   );
@@ -53,8 +57,8 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  content: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 24,
     paddingVertical: 20,
     justifyContent: 'space-between',

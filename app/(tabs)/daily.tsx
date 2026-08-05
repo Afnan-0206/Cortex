@@ -402,7 +402,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#090b10' },
   loadingArea: { flex: 1, backgroundColor: '#090b10', alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { color: '#94a3b8', fontSize: 16, fontWeight: '600' },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 95 },
 
   // Header
   headerBlock: { marginBottom: 20 },

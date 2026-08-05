@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { UserProfile, SessionState, Rank } from '../types';
 import { getCurrentRank } from '../logic/ranks';
 import {
@@ -108,152 +109,169 @@ export interface UserStore {
   logout: () => Promise<void>;
 }
 
-export const useUserStore = create<UserStore>((set, get) => ({
-  user: null,
-  session: null,
-  profile: DEFAULT_PROFILE,
-  activeSession: null,
-  isLoading: true,
-  themeMode: 'dark',
+export const useUserStore = create<UserStore>()(
+  persist(
+    (set, get) => ({
+      user: null,
+      session: null,
+      profile: DEFAULT_PROFILE,
+      activeSession: null,
+      isLoading: true,
+      themeMode: 'dark',
 
-  initializeAuth: async () => {
-    set({ isLoading: true });
-    try {
-      const { data } = await supabase.auth.getSession();
-      const session = data?.session;
-      if (session && session.user) {
-        set({ session, user: session.user });
-        await get().loadProfile();
-      } else {
-        await get().loadProfile();
-      }
-    } catch (e) {
-      console.warn('Auth initialization error:', e);
-    } finally {
-      set({ isLoading: false });
-    }
-  },
-
-  signInWithEmail: async (email, password) => {
-    const res = await supabase.auth.signInWithPassword({ email, password });
-    const data = res?.data;
-    const error = res?.error;
-    if (!error && data?.session) {
-      set({ session: data.session, user: data.session.user });
-      await get().initializeAuth();
-    }
-    return { error };
-  },
-
-  signUpWithEmail: async (email, password, username) => {
-    const res = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { username } },
-    });
-    const data = res?.data;
-    const error = res?.error;
-    if (!error && data?.session) {
-      set({ session: data.session, user: data.session.user });
-      await supabase.from('profiles').insert({
-        id: data.session.user.id,
-        username,
-        rating: 1200,
-      });
-      await get().initializeAuth();
-    }
-    return { error };
-  },
-
-  signOut: async () => {
-    try {
-      await supabase.removeAllChannels();
-      await supabase.auth.signOut();
-    } catch {
-      // silent fallback
-    }
-    set({ user: null, session: null, profile: DEFAULT_PROFILE, activeSession: null });
-    await secureStorage.removeItem(ASYNC_STORAGE_KEY).catch(() => {});
-  },
-
-  setThemeMode: (mode) => set({ themeMode: mode }),
-
-  loadProfile: async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const jsonStr = await secureStorage.getItem(ASYNC_STORAGE_KEY);
-      const todayStr = new Date().toISOString().split('T')[0];
-
-      const isAuthenticated = !!session;
-
-      let dbProfileData: any = null;
-      let dbDailyProgress: any = null;
-      if (session?.user) {
-        const { data: dbProfile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .maybeSingle();
-        dbProfileData = dbProfile;
-
-        const { data: dbDaily } = await supabase
-          .from('user_daily_progress')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .eq('challenge_date', todayStr)
-          .maybeSingle();
-        dbDailyProgress = dbDaily;
-      }
-
-      const isTodayDone =
-        dbDailyProgress?.is_completed === true ||
-        dbProfileData?.last_daily_completed_date === todayStr;
-
-      let baseProfile = DEFAULT_PROFILE;
-      if (jsonStr) {
+      initializeAuth: async () => {
+        set({ isLoading: true });
         try {
-          baseProfile = JSON.parse(jsonStr);
-        } catch {
-          baseProfile = DEFAULT_PROFILE;
+          const { data } = await supabase.auth.getSession();
+          const session = data?.session;
+          if (session && session.user) {
+            set({ session, user: session.user });
+            await get().loadProfile();
+          } else {
+            await get().loadProfile();
+          }
+        } catch (e) {
+          console.warn('Auth initialization error:', e);
+        } finally {
+          set({ isLoading: false });
         }
-      }
+      },
 
-      const finalXP = Math.max(dbProfileData?.xp ?? 0, dbProfileData?.rating ?? 0, baseProfile.brainPoints ?? 0);
-      const finalCoins = Math.max(dbProfileData?.coins ?? 0, baseProfile.coins ?? 0);
-      const finalStreak = Math.max(dbProfileData?.streak ?? 0, baseProfile.streak ?? 0);
-      const finalBestStreak = Math.max(dbProfileData?.best_streak ?? 0, baseProfile.longestStreak ?? 0, finalStreak);
+      signInWithEmail: async (email, password) => {
+        const res = await supabase.auth.signInWithPassword({ email, password });
+        const data = res?.data;
+        const error = res?.error;
+        if (!error && data?.session) {
+          set({ session: data.session, user: data.session.user });
+          await get().initializeAuth();
+        }
+        return { error };
+      },
 
-      const mergedProfile: UserProfile = {
-        ...DEFAULT_PROFILE,
-        ...baseProfile,
-        isLoggedIn: isAuthenticated,
-        name: dbProfileData?.username || baseProfile.name || 'Athlete',
-        brainPoints: finalXP,
-        streak: finalStreak,
-        longestStreak: finalBestStreak,
-        coins: finalCoins,
-        dailyProgress: isTodayDone ? 4 : Math.max(dbDailyProgress?.completed_sections ?? 0, baseProfile.dailyProgress ?? 0),
-        dailyRewardClaimed: isTodayDone || (baseProfile.dailyRewardClaimed ?? false),
-        first_game_completed: dbProfileData?.first_game_completed ?? baseProfile.first_game_completed ?? false,
-        streakFreezes: baseProfile.streakFreezes ?? 0,
-        lastFreezeGrantedStreak: baseProfile.lastFreezeGrantedStreak ?? 0,
-      };
+      signUpWithEmail: async (email, password, username) => {
+        const res = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { username } },
+        });
+        const data = res?.data;
+        const error = res?.error;
+        if (!error && data?.session) {
+          set({ session: data.session, user: data.session.user });
+          await supabase.from('profiles').insert({
+            id: data.session.user.id,
+            username,
+            rating: 1200,
+          });
+          await get().initializeAuth();
+        }
+        return { error };
+      },
 
-      set({ profile: mergedProfile, isLoading: false });
-      await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(mergedProfile)).catch(() => {});
-      await get().consumeFreezeIfNeeded();
-      await get().grantFreezeIfEligible();
-    } catch {
-      set({ profile: DEFAULT_PROFILE, isLoading: false });
-    }
-  },
+      signOut: async () => {
+        try {
+          await supabase.removeAllChannels();
+          await supabase.auth.signOut();
+        } catch {
+          // silent fallback
+        }
+        set({ user: null, session: null, profile: DEFAULT_PROFILE, activeSession: null });
+      },
 
-  startSession: () => {
-    set({
-      activeSession: {
-        startedAt: Date.now(),
-        mathCorrect: 0,
-        mathTotal: 0,
+      setThemeMode: (mode) => set({ themeMode: mode }),
+
+      loadProfile: async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const currentProfile = get().profile;
+          const todayStr = new Date().toISOString().split('T')[0];
+          const isAuthenticated = !!session;
+
+          let dbProfileData: any = null;
+          let dbDailyProgress: any = null;
+          if (session?.user) {
+            const { data: dbProfile } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .maybeSingle();
+            dbProfileData = dbProfile;
+
+            const { data: dbDaily } = await supabase
+              .from('user_daily_progress')
+              .select('*')
+              .eq('user_id', session.user.id)
+              .eq('challenge_date', todayStr)
+              .maybeSingle();
+            dbDailyProgress = dbDaily;
+          }
+
+          const isTodayDone =
+            dbDailyProgress?.is_completed === true ||
+            dbProfileData?.last_daily_completed_date === todayStr ||
+            (currentProfile.lastCompletedDate === todayStr && currentProfile.dailyProgress === 4);
+
+          const isNewDay = !!currentProfile.lastCompletedDate && currentProfile.lastCompletedDate !== todayStr;
+
+          const dailyProgressForToday = isTodayDone
+            ? 4
+            : isNewDay
+            ? 0
+            : Math.max(dbDailyProgress?.completed_sections ?? 0, currentProfile.dailyProgress ?? 0);
+
+          const dailyRewardClaimedForToday = isTodayDone
+            ? true
+            : isNewDay
+            ? false
+            : (currentProfile.dailyRewardClaimed ?? false);
+
+          const dailyMissionsForToday = isNewDay
+            ? (DEFAULT_PROFILE.dailyMissions ?? []).map((m) => ({ ...m, current: 0, claimed: false }))
+            : (currentProfile.dailyMissions ?? DEFAULT_PROFILE.dailyMissions);
+
+          const finalXP = Math.max(dbProfileData?.xp ?? 0, dbProfileData?.rating ?? 0, currentProfile.brainPoints ?? 0);
+          const finalCoins = Math.max(dbProfileData?.coins ?? 0, currentProfile.coins ?? 0);
+          const finalStreak = Math.max(dbProfileData?.streak ?? 0, currentProfile.streak ?? 0);
+          const finalBestStreak = Math.max(dbProfileData?.best_streak ?? 0, currentProfile.longestStreak ?? 0, finalStreak);
+
+          const mergedProfile: UserProfile = {
+            ...DEFAULT_PROFILE,
+            ...currentProfile,
+            isLoggedIn: isAuthenticated,
+            name: dbProfileData?.username || currentProfile.name || 'Athlete',
+            brainPoints: finalXP,
+            streak: finalStreak,
+            longestStreak: finalBestStreak,
+            coins: finalCoins,
+            dailyProgress: dailyProgressForToday,
+            dailyRewardClaimed: dailyRewardClaimedForToday,
+            dailyMissions: dailyMissionsForToday,
+            first_game_completed: dbProfileData?.first_game_completed ?? currentProfile.first_game_completed ?? false,
+            streakFreezes: currentProfile.streakFreezes ?? 0,
+            lastFreezeGrantedStreak: currentProfile.lastFreezeGrantedStreak ?? 0,
+            dailyRewardCycleDay: currentProfile.dailyRewardCycleDay ?? 1,
+            lastDailyRewardClaimDate: currentProfile.lastDailyRewardClaimDate ?? null,
+            badges: currentProfile.badges ?? [],
+            completedQuests: currentProfile.completedQuests ?? [],
+            totalSessionsCompleted: currentProfile.totalSessionsCompleted ?? 0,
+            lastCompletedDate: currentProfile.lastCompletedDate ?? null,
+          };
+
+          set({ profile: mergedProfile, isLoading: false });
+          await get().consumeFreezeIfNeeded();
+          await get().grantFreezeIfEligible();
+        } catch (e) {
+          console.warn('[userStore] loadProfile error:', e);
+          set({ isLoading: false });
+        }
+      },
+
+      startSession: () => {
+        set({
+          activeSession: {
+            startedAt: Date.now(),
+            mathCorrect: 0,
+            mathTotal: 0,
         logicCorrect: 0,
         logicTotal: 0,
         memorySpan: 0,
@@ -751,6 +769,16 @@ export const useUserStore = create<UserStore>((set, get) => ({
       email: '',
     };
     set({ user: null, session: null, profile: updatedProfile, activeSession: null });
-    await secureStorage.removeItem(ASYNC_STORAGE_KEY).catch(() => {});
   },
-}));
+}),
+{
+  name: 'cortex_user_profile_v3',
+  storage: createJSONStorage(() => secureStorage),
+  partialize: (state) => ({
+    profile: state.profile,
+    themeMode: state.themeMode,
+  }),
+}
+)
+);
+

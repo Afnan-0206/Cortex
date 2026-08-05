@@ -25,6 +25,7 @@ import {
 
 import { useAuthGate } from '../lib/hooks/useAuthGate';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
+import { ensureDailyRemindersScheduled } from '../lib/notifications';
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -43,6 +44,10 @@ export default function RootLayout() {
   });
 
   useAuthGate();
+
+  React.useEffect(() => {
+    ensureDailyRemindersScheduled().catch(() => {});
+  }, []);
 
   if (!fontsLoaded) {
     return (

@@ -8,8 +8,10 @@ import {
   TextInput,
   SafeAreaView,
   KeyboardAvoidingView,
+  ScrollView,
   Platform,
 } from 'react-native';
+
 import { useRouter } from 'expo-router';
 import Animated, {
   useSharedValue,
@@ -57,95 +59,101 @@ export default function EmailScreen() {
           style={styles.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          <View style={styles.container}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.container}>
 
-            {/* Back button */}
-            <Pressable
-              style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.6 }]}
-              onPress={handleBack}
-              accessibilityLabel="Go back"
-              accessibilityRole="button"
-            >
-              <MaterialCommunityIcons name="arrow-left" size={22} color="#94a3b8" />
-            </Pressable>
+              {/* Back button */}
+              <Pressable
+                style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.6 }]}
+                onPress={handleBack}
+                accessibilityLabel="Go back"
+                accessibilityRole="button"
+              >
+                <MaterialCommunityIcons name="arrow-left" size={22} color="#94a3b8" />
+              </Pressable>
 
-            {/* Header */}
-            <View style={styles.headerSection}>
-              <Text style={styles.title}>Sign in</Text>
-              <Text style={styles.subtitle}>Enter your email and password to continue.</Text>
-            </View>
-
-            {/* Fields */}
-            <View style={styles.fieldsSection}>
-              {/* Email */}
-              <View style={styles.fieldWrapper}>
-                <Text style={styles.fieldLabel}>Email</Text>
-                <TextInput
-                  style={styles.fieldInput}
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="you@example.com"
-                  placeholderTextColor="#334155"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  returnKeyType="next"
-                  accessibilityLabel="Email address"
-                />
+              {/* Header */}
+              <View style={styles.headerSection}>
+                <Text style={styles.title}>Sign in</Text>
+                <Text style={styles.subtitle}>Enter your email and password to continue.</Text>
               </View>
 
-              {/* Password */}
-              <View style={styles.fieldWrapper}>
-                <Text style={styles.fieldLabel}>Password</Text>
-                <View style={styles.passwordRow}>
+              {/* Fields */}
+              <View style={styles.fieldsSection}>
+                {/* Email */}
+                <View style={styles.fieldWrapper}>
+                  <Text style={styles.fieldLabel}>Email</Text>
                   <TextInput
-                    style={[styles.fieldInput, styles.passwordInput]}
-                    value={password}
-                    onChangeText={setPassword}
-                    placeholder="••••••••"
+                    style={styles.fieldInput}
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="you@example.com"
                     placeholderTextColor="#334155"
-                    secureTextEntry={!showPassword}
+                    keyboardType="email-address"
                     autoCapitalize="none"
                     autoCorrect={false}
-                    returnKeyType="done"
-                    onSubmitEditing={handleContinue}
-                    accessibilityLabel="Password"
+                    returnKeyType="next"
+                    accessibilityLabel="Email address"
                   />
-                  <Pressable
-                    style={styles.eyeBtn}
-                    onPress={() => setShowPassword((v) => !v)}
-                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    <MaterialCommunityIcons
-                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                      size={20}
-                      color="#475569"
+                </View>
+
+                {/* Password */}
+                <View style={styles.fieldWrapper}>
+                  <Text style={styles.fieldLabel}>Password</Text>
+                  <View style={styles.passwordRow}>
+                    <TextInput
+                      style={[styles.fieldInput, styles.passwordInput]}
+                      value={password}
+                      onChangeText={setPassword}
+                      placeholder="••••••••"
+                      placeholderTextColor="#334155"
+                      secureTextEntry={!showPassword}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      returnKeyType="done"
+                      onSubmitEditing={handleContinue}
+                      accessibilityLabel="Password"
                     />
-                  </Pressable>
+                    <Pressable
+                      style={styles.eyeBtn}
+                      onPress={() => setShowPassword((v) => !v)}
+                      accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      <MaterialCommunityIcons
+                        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                        size={20}
+                        color="#475569"
+                      />
+                    </Pressable>
+                  </View>
                 </View>
               </View>
-            </View>
 
-            {/* Continue button */}
-            <Pressable
-              style={({ pressed }) => [styles.continueBtn, pressed && styles.btnPressed]}
-              onPress={handleContinue}
-              accessibilityLabel="Continue"
-              accessibilityRole="button"
-            >
-              <Text style={styles.continueBtnText}>Continue</Text>
-              <MaterialCommunityIcons name="arrow-right" size={18} color="#111827" />
-            </Pressable>
-
-            {/* Sign up hint */}
-            <View style={styles.signupRow}>
-              <Text style={styles.signupText}>No account? </Text>
-              <Pressable onPress={() => Alert.alert('Coming soon', 'Registration coming soon.')}>
-                <Text style={styles.signupLink}>Create one</Text>
+              {/* Continue button */}
+              <Pressable
+                style={({ pressed }) => [styles.continueBtn, pressed && styles.btnPressed]}
+                onPress={handleContinue}
+                accessibilityLabel="Continue"
+                accessibilityRole="button"
+              >
+                <Text style={styles.continueBtnText}>Continue</Text>
+                <MaterialCommunityIcons name="arrow-right" size={18} color="#111827" />
               </Pressable>
-            </View>
 
-          </View>
+              {/* Sign up hint */}
+              <View style={styles.signupRow}>
+                <Text style={styles.signupText}>No account? </Text>
+                <Pressable onPress={() => Alert.alert('Coming soon', 'Registration coming soon.')}>
+                  <Text style={styles.signupLink}>Create one</Text>
+                </Pressable>
+              </View>
+
+            </View>
+          </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
@@ -159,6 +167,10 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   glowTop: {
     position: 'absolute',

@@ -921,8 +921,8 @@ const styles = StyleSheet.create({
   },
   keypadBtn: {
     width: '31%',
-    height: 58,
-    borderRadius: 16,
+    height: 50,
+    borderRadius: 14,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,

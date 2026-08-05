@@ -348,7 +348,6 @@ export const useDailyChallengeStore = create<DailyChallengeState>((set, get) => 
                 lastCompletedDate: dateStr,
               };
               useUserStore.setState({ profile: updatedP });
-              AsyncStorage.setItem('cortex_profile_v1', JSON.stringify(updatedP)).catch(() => {});
             } else {
               const updatedP = {
                 ...useUserStore.getState().profile,
@@ -360,7 +359,6 @@ export const useDailyChallengeStore = create<DailyChallengeState>((set, get) => 
                 lastCompletedDate: dateStr,
               };
               useUserStore.setState({ profile: updatedP });
-              AsyncStorage.setItem('cortex_profile_v1', JSON.stringify(updatedP)).catch(() => {});
             }
           } catch {
             const updatedP = {
@@ -373,7 +371,6 @@ export const useDailyChallengeStore = create<DailyChallengeState>((set, get) => 
               lastCompletedDate: dateStr,
             };
             useUserStore.setState({ profile: updatedP });
-            AsyncStorage.setItem('cortex_profile_v1', JSON.stringify(updatedP)).catch(() => {});
           }
 
           set({

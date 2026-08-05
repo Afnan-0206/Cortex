@@ -11,6 +11,8 @@ import {
   Linking,
   Image,
   TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -28,6 +30,7 @@ import { useUserStore } from '../../src/store/userStore';
 import { useSettings } from '../../lib/hooks/useSettings';
 import { executeOptimisticAction } from '../../lib/optimisticManager';
 import { getLevel, getLevelProgress, getXpRemainingForNextLevel } from '../../src/utils/level';
+import { sendTestNotification } from '../../lib/notifications';
 
 // Reusable Spring Pressable Component
 interface ScalePressableProps {
@@ -342,6 +345,27 @@ export default function ProfileScreen() {
 
             <View style={styles.controlDivider} />
 
+            <Pressable
+              style={styles.controlRow}
+              onPress={async () => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                const sent = await sendTestNotification();
+                if (!sent) {
+                  alert('Notification permission denied or unavailable.');
+                }
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Send Test Notification"
+            >
+              <View style={styles.controlMeta}>
+                <MaterialCommunityIcons name="bell-ring-outline" size={18} color="#facc15" style={{ marginRight: 10 }} />
+                <Text style={[styles.controlTitle, { color: '#facc15' }]}>Send Test Notification (3s) 🔔</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color="#facc15" />
+            </Pressable>
+
+            <View style={styles.controlDivider} />
+
             <View style={styles.controlRow}>
               <View style={styles.controlMeta}>
                 <MaterialCommunityIcons name="vibrate" size={18} color="#38bdf8" style={{ marginRight: 10 }} />
@@ -438,6 +462,28 @@ export default function ProfileScreen() {
                 <Text style={[styles.controlTitle, { color: '#dc2626' }]}>Delete Account (Permanent)</Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={20} color="#dc2626" />
+            </Pressable>
+
+            <View style={styles.controlDivider} />
+
+            <Pressable
+              style={styles.controlRow}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                const subject = encodeURIComponent('Cortex Beta Feedback');
+                const body = encodeURIComponent(
+                  `\n\n-------------------\nApp Version: v1.0.0 (Build 57)\nPlatform: ${Platform.OS}\nUser ID: ${profile.name || 'Athlete'}\n`
+                );
+                Linking.openURL(`mailto:support@cortex.app?subject=${subject}&body=${body}`);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Send Beta Feedback"
+            >
+              <View style={styles.controlMeta}>
+                <MaterialCommunityIcons name="message-text-outline" size={18} color="#84cc16" style={{ marginRight: 10 }} />
+                <Text style={[styles.controlTitle, { color: '#84cc16' }]}>Send Beta Feedback 💬</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color="#84cc16" />
             </Pressable>
 
             <View style={styles.controlDivider} />
@@ -689,40 +735,45 @@ export default function ProfileScreen() {
         onRequestClose={() => setEditNameModal(false)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => setEditNameModal(false)}>
-          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>Edit Player Username ✏️</Text>
-            <Text style={styles.modalSub}>Update the username shown on your profile and leaderboards:</Text>
-            
-            <TextInput
-              style={{
-                height: 48,
-                backgroundColor: '#12141a',
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: '#84cc16',
-                paddingHorizontal: 14,
-                color: '#ffffff',
-                fontSize: 15,
-                fontWeight: '700',
-                marginBottom: 16,
-              }}
-              value={editNameInput}
-              onChangeText={setEditNameInput}
-              placeholder="Enter new username"
-              placeholderTextColor="#6b7280"
-              autoCapitalize="words"
-              autoCorrect={false}
-              maxLength={20}
-            />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ width: '100%', alignItems: 'center' }}
+          >
+            <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+              <Text style={styles.modalTitle}>Edit Player Username ✏️</Text>
+              <Text style={styles.modalSub}>Update the username shown on your profile and leaderboards:</Text>
+              
+              <TextInput
+                style={{
+                  height: 48,
+                  backgroundColor: '#12141a',
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: '#84cc16',
+                  paddingHorizontal: 14,
+                  color: '#ffffff',
+                  fontSize: 15,
+                  fontWeight: '700',
+                  marginBottom: 16,
+                }}
+                value={editNameInput}
+                onChangeText={setEditNameInput}
+                placeholder="Enter new username"
+                placeholderTextColor="#6b7280"
+                autoCapitalize="words"
+                autoCorrect={false}
+                maxLength={20}
+              />
 
-            <ScalePressable style={styles.modalPrimaryBtn} onPress={handleSaveName}>
-              <Text style={styles.modalPrimaryBtnText}>SAVE USERNAME</Text>
-            </ScalePressable>
+              <ScalePressable style={styles.modalPrimaryBtn} onPress={handleSaveName}>
+                <Text style={styles.modalPrimaryBtnText}>SAVE USERNAME</Text>
+              </ScalePressable>
 
-            <ScalePressable style={styles.modalCloseBtn} onPress={() => setEditNameModal(false)}>
-              <Text style={styles.modalCloseBtnText}>CANCEL</Text>
-            </ScalePressable>
-          </Pressable>
+              <ScalePressable style={styles.modalCloseBtn} onPress={() => setEditNameModal(false)}>
+                <Text style={styles.modalCloseBtnText}>CANCEL</Text>
+              </ScalePressable>
+            </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
     </SafeAreaView>
