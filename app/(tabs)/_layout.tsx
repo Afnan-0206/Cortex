@@ -8,6 +8,7 @@ export default function TabsLayout() {
       tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
         headerShown: false,
+        lazy: true,
       }}
     >
       {/* 1. ARENA (Home) */}

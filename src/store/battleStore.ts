@@ -116,7 +116,6 @@ export const generateTrickyQuestions = (count: number = 30): MathQuestion[] => {
 };
 
 let battleChannel: any = null;
-let answersChannel: any = null;
 
 export const useBattleStore = create<BattleStoreState>((set, get) => ({
   matchId: null,
@@ -228,7 +227,6 @@ export const useBattleStore = create<BattleStoreState>((set, get) => ({
 
   subscribeToMatch: (matchId: string) => {
     if (battleChannel) battleChannel.unsubscribe();
-    if (answersChannel) answersChannel.unsubscribe();
 
     battleChannel = supabase.channel(`battle:${matchId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'battle_state', filter: `match_id=eq.${matchId}` }, (payload: any) => {
@@ -244,9 +242,6 @@ export const useBattleStore = create<BattleStoreState>((set, get) => ({
           }
         }
       })
-      .subscribe();
-
-    answersChannel = supabase.channel(`answers:${matchId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'answers', filter: `match_id=eq.${matchId}` }, (payload: any) => {
         const answerRow = payload.new;
         const currentOpponent = get().opponent;
@@ -389,7 +384,6 @@ export const useBattleStore = create<BattleStoreState>((set, get) => ({
 
   resetBattle: () => {
     if (battleChannel) battleChannel.unsubscribe();
-    if (answersChannel) answersChannel.unsubscribe();
 
     set({
       matchId: null,

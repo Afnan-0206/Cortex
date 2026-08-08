@@ -501,8 +501,9 @@ export default function ArenaHomeScreen() {
   );
 
   useEffect(() => {
-    const unsubscribe = subscribeRealtime();
-    return unsubscribe;
+    let unsubscribe: (() => void) | undefined;
+    subscribeRealtime().then((fn: () => void) => { unsubscribe = fn; });
+    return () => { unsubscribe?.(); };
   }, []);
 
   const [selectedMode, setSelectedMode] = useState<ModeType>('math');

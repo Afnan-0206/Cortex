@@ -6,47 +6,52 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
   useFonts,
   Inter_400Regular,
-  Inter_500Medium,
   Inter_600SemiBold,
-  Inter_700Bold,
   Inter_800ExtraBold,
-  Inter_900Black,
 } from '@expo-google-fonts/inter';
 import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
-import {
-  Outfit_700Bold,
-  Outfit_800ExtraBold,
-  Outfit_900Black,
-} from '@expo-google-fonts/outfit';
-import {
-  SpaceGrotesk_700Bold,
-  SpaceGrotesk_600SemiBold,
-} from '@expo-google-fonts/space-grotesk';
+import { Outfit_800ExtraBold, Outfit_900Black } from '@expo-google-fonts/outfit';
 
 import { useAuthGate } from '../lib/hooks/useAuthGate';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
 import { ensureDailyRemindersScheduled } from '../lib/notifications';
 
+// Lazy-load non-critical fonts
+const loadAdditionalFonts = () => {
+  import('@expo-google-fonts/inter').then(({ Inter_500Medium, Inter_700Bold, Inter_900Black }) => {
+    useFonts({
+      Inter_500Medium,
+      Inter_700Bold,
+      Inter_900Black,
+    });
+  }).catch(() => {});
+  
+  import('@expo-google-fonts/outfit').then(({ Outfit_700Bold }) => {
+    useFonts({ Outfit_700Bold });
+  }).catch(() => {});
+  
+  import('@expo-google-fonts/space-grotesk').then(({ SpaceGrotesk_700Bold, SpaceGrotesk_600SemiBold }) => {
+    useFonts({ SpaceGrotesk_700Bold, SpaceGrotesk_600SemiBold });
+  }).catch(() => {});
+};
+
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
-    Inter_500Medium,
     Inter_600SemiBold,
-    Inter_700Bold,
     Inter_800ExtraBold,
-    Inter_900Black,
     BebasNeue_400Regular,
-    Outfit_700Bold,
     Outfit_800ExtraBold,
     Outfit_900Black,
-    SpaceGrotesk_700Bold,
-    SpaceGrotesk_600SemiBold,
   });
 
   useAuthGate();
 
   React.useEffect(() => {
     ensureDailyRemindersScheduled().catch(() => {});
+    // Defer non-critical font loading
+    const timer = setTimeout(loadAdditionalFonts, 1000);
+    return () => clearTimeout(timer);
   }, []);
 
   if (!fontsLoaded) {

@@ -9,7 +9,6 @@ import {
   Switch,
   Share,
   Linking,
-  Image,
   TextInput,
   KeyboardAvoidingView,
   Platform,

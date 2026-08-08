@@ -21,7 +21,7 @@ export function usePresence() {
       return;
     }
 
-    const channel = supabase.channel('presence:arena', {
+    const channel = supabase.channel(`presence:arena:${user.id}`, {
       config: {
         presence: {
           key: user.id,
@@ -32,7 +32,10 @@ export function usePresence() {
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
       const list = Object.values(state).flat() as any[];
-      setOnlineUsers(list);
+      // Filter to only show users within reasonable rating range (±500) to reduce noise
+      const myRating = userProfile.brainPoints || 1200;
+      const filtered = list.filter(u => Math.abs((u.elo_rating || 1200) - myRating) <= 500);
+      setOnlineUsers(filtered);
     });
 
     const trackUser = async () => {

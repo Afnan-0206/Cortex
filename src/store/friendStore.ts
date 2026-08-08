@@ -10,7 +10,7 @@ export interface SuggestedUser {
 }
 
 export interface FriendRecord {
-  id: string; // friendship id
+  id: string;
   friendId: string;
   username: string;
   rating: number;
@@ -50,17 +50,21 @@ interface FriendStore {
   notifications: AppNotification[];
   unreadCount: number;
   isLoadingDiscovery: boolean;
+  notificationsPage: number;
+  hasMoreNotifications: boolean;
 
-  loadDiscovery: () => Promise<void>;
+  loadDiscovery: (page?: number, pageSize?: number) => Promise<void>;
   loadFriends: () => Promise<void>;
-  loadNotifications: () => Promise<void>;
+  loadNotifications: (page?: number, pageSize?: number) => Promise<void>;
+  loadMoreNotifications: () => Promise<void>;
   sendRequest: (toUserId: string) => Promise<{ success: boolean; error?: string }>;
   respondToRequest: (requestId: string, accept: boolean) => Promise<{ success: boolean }>;
   markAllRead: () => Promise<void>;
-  subscribeRealtime: () => () => void;
+  subscribeRealtime: () => Promise<() => void>;
 }
 
 const AVATAR_COLORS = ['#00b4d8', '#e01e5a', '#84cc16', '#f97316', '#a855f7', '#0f4c5c'];
+const DEFAULT_PAGE_SIZE = 20;
 
 export const useFriendStore = create<FriendStore>((set, get) => ({
   suggestedUsers: [],
@@ -70,8 +74,10 @@ export const useFriendStore = create<FriendStore>((set, get) => ({
   notifications: [],
   unreadCount: 0,
   isLoadingDiscovery: false,
+  notificationsPage: 0,
+  hasMoreNotifications: true,
 
-  loadDiscovery: async () => {
+  loadDiscovery: async (page = 0, pageSize = DEFAULT_PAGE_SIZE) => {
     set({ isLoadingDiscovery: true });
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -85,15 +91,13 @@ export const useFriendStore = create<FriendStore>((set, get) => ({
 
       const suggestedMap = new Map<string, SuggestedUser>();
 
-      // --- Online User Presence Discovery ---
-
-      // --- 3. Online Presence Fallback ---
+      // Single query with join to avoid N+1
       const { data: onlinePresence } = await supabase
         .from('presence')
-        .select('user_id, profiles(id, username, rating, avatar_color)')
+        .select('user_id, profiles!inner(id, username, rating, avatar_color)')
         .neq('user_id', myId)
         .order('last_seen', { ascending: false })
-        .limit(30);
+        .limit(pageSize);
 
       (onlinePresence ?? []).forEach((row: any) => {
         const p = row.profiles;
@@ -109,7 +113,15 @@ export const useFriendStore = create<FriendStore>((set, get) => ({
         }
       });
 
-      set({ suggestedUsers: Array.from(suggestedMap.values()), isLoadingDiscovery: false });
+      // Only replace on first page, append on subsequent pages
+      if (page === 0) {
+        set({ suggestedUsers: Array.from(suggestedMap.values()), isLoadingDiscovery: false });
+      } else {
+        set(state => ({
+          suggestedUsers: [...state.suggestedUsers, ...Array.from(suggestedMap.values())],
+          isLoadingDiscovery: false,
+        }));
+      }
     } catch {
       set({ isLoadingDiscovery: false });
     }
@@ -121,18 +133,36 @@ export const useFriendStore = create<FriendStore>((set, get) => ({
       if (!session?.user) return;
       const myId = session.user.id;
 
-      // Load confirmed friends (join profile data)
-      const { data: rawFriends } = await supabase
-        .from('friends')
-        .select(`
-          id,
-          created_at,
-          user_a,
-          user_b,
-          profile_a:profiles!friends_user_a_fkey(id, username, rating, avatar_color),
-          profile_b:profiles!friends_user_b_fkey(id, username, rating, avatar_color)
-        `)
-        .or(`user_a.eq.${myId},user_b.eq.${myId}`);
+      // Single query: friends + their profiles + pending requests in parallel
+      const [
+        { data: rawFriends },
+        { data: rawOutgoing },
+        { data: rawIncoming },
+      ] = await Promise.all([
+        supabase
+          .from('friends')
+          .select(`
+            id,
+            created_at,
+            user_a,
+            user_b,
+            profile_a:profiles!friends_user_a_fkey(id, username, rating, avatar_color),
+            profile_b:profiles!friends_user_b_fkey(id, username, rating, avatar_color)
+          `)
+          .or(`user_a.eq.${myId},user_b.eq.${myId}`),
+        supabase
+          .from('friend_requests')
+          .select('id, from_user, to_user, status, created_at, profiles!friend_requests_to_user_fkey(username)')
+          .eq('from_user', myId)
+          .eq('status', 'pending')
+          .limit(50),
+        supabase
+          .from('friend_requests')
+          .select('id, from_user, to_user, status, created_at, profiles!friend_requests_from_user_fkey(username)')
+          .eq('to_user', myId)
+          .eq('status', 'pending')
+          .limit(50),
+      ]);
 
       const friends: FriendRecord[] = (rawFriends ?? []).map((row: any) => {
         const isA = row.user_a === myId;
@@ -147,13 +177,6 @@ export const useFriendStore = create<FriendStore>((set, get) => ({
         };
       });
 
-      // Load outgoing requests
-      const { data: rawOutgoing } = await supabase
-        .from('friend_requests')
-        .select('id, from_user, to_user, status, created_at, profiles!friend_requests_to_user_fkey(username)')
-        .eq('from_user', myId)
-        .eq('status', 'pending');
-
       const pendingOutgoing: FriendRequest[] = (rawOutgoing ?? []).map((r: any) => ({
         id: r.id,
         from_user: r.from_user,
@@ -162,13 +185,6 @@ export const useFriendStore = create<FriendStore>((set, get) => ({
         status: r.status,
         created_at: r.created_at,
       }));
-
-      // Load incoming requests
-      const { data: rawIncoming } = await supabase
-        .from('friend_requests')
-        .select('id, from_user, to_user, status, created_at, profiles!friend_requests_from_user_fkey(username)')
-        .eq('to_user', myId)
-        .eq('status', 'pending');
 
       const pendingIncoming: FriendRequest[] = (rawIncoming ?? []).map((r: any) => ({
         id: r.id,
@@ -185,24 +201,42 @@ export const useFriendStore = create<FriendStore>((set, get) => ({
     }
   },
 
-  loadNotifications: async () => {
+  loadNotifications: async (page = 0, pageSize = DEFAULT_PAGE_SIZE) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) return;
 
-      const { data: rows } = await supabase
+      const from = page * pageSize;
+      const to = from + pageSize - 1;
+
+      const { data: rows, count } = await supabase
         .from('notifications')
-        .select('*')
+        .select('*', { count: 'exact' })
         .eq('user_id', session.user.id)
         .order('created_at', { ascending: false })
-        .limit(40);
+        .range(from, to);
 
       const notifications: AppNotification[] = rows ?? [];
       const unreadCount = notifications.filter(n => !n.read).length;
-      set({ notifications, unreadCount });
+
+      if (page === 0) {
+        set({ notifications, unreadCount, notificationsPage: 0, hasMoreNotifications: (count ?? 0) > pageSize });
+      } else {
+        set(state => ({
+          notifications: [...state.notifications, ...notifications],
+          notificationsPage: page,
+          hasMoreNotifications: (count ?? 0) > (page + 1) * pageSize,
+        }));
+      }
     } catch {
       // silent
     }
+  },
+
+  loadMoreNotifications: async () => {
+    const { notificationsPage, hasMoreNotifications, loadNotifications } = get();
+    if (!hasMoreNotifications) return;
+    await loadNotifications(notificationsPage + 1);
   },
 
   sendRequest: async (toUserId: string) => {
@@ -263,26 +297,48 @@ export const useFriendStore = create<FriendStore>((set, get) => ({
     }
   },
 
-  subscribeRealtime: () => {
+  subscribeRealtime: async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return () => {};
+
+    const myId = session.user.id;
     const channel = supabase
-      .channel('friend-system-realtime')
+      .channel(`friend-system-realtime:${myId}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications' },
-        () => {
-          get().loadNotifications();
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${myId}` },
+        (payload) => {
+          const newNotif = payload.new as AppNotification;
+          set(state => ({
+            notifications: [newNotif, ...state.notifications].slice(0, 100),
+            unreadCount: state.unreadCount + (newNotif.read ? 0 : 1),
+          }));
         }
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'friends' },
+        { event: '*', schema: 'public', table: 'friends', filter: `user_a=eq.${myId}` },
         () => {
           get().loadFriends();
         }
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'friend_requests' },
+        { event: '*', schema: 'public', table: 'friends', filter: `user_b=eq.${myId}` },
+        () => {
+          get().loadFriends();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'friend_requests', filter: `to_user=eq.${myId}` },
+        () => {
+          get().loadFriends();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'friend_requests', filter: `from_user=eq.${myId}` },
         () => {
           get().loadFriends();
         }
