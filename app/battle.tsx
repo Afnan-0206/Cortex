@@ -27,6 +27,7 @@ import { TUTORIAL_CONFIGS } from '../src/logic/tutorialConfigs';
 export default function BattleScreen() {
   const router = useRouter();
   const battle = useBattleStore();
+  const serverTimeLeft = useBattleStore((state) => state.getServerTimeLeft());
   const [userInput, setUserInput] = useState<string>('');
   const [inputErrorFlash, setInputErrorFlash] = useState<boolean>(false);
   const [inputSuccessFlash, setInputSuccessFlash] = useState<boolean>(false);
@@ -49,7 +50,7 @@ export default function BattleScreen() {
   }, [battle.status]);
 
   useEffect(() => {
-    if (battle.status === 'playing' && battle.timeLeft <= 10) {
+    if (battle.status === 'playing' && serverTimeLeft <= 10) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       timerPulseScale.value = withRepeat(
         withSequence(
@@ -171,8 +172,8 @@ export default function BattleScreen() {
             </View>
 
             <CortexButton
-              label="Start AI Practice Duel"
-              onPress={() => battle.startMatchmaking(battle.user.id, battle.user.rating)}
+              label="Start Sprint Duel"
+              onPress={() => battle.startMatchmaking(battle.user.id, battle.user.rating, 'sprint')}
               variant="primary"
               style={styles.idleCta}
             />
@@ -184,7 +185,7 @@ export default function BattleScreen() {
             onClose={() => setShowTutorial(false)}
             onCtaPress={() => {
               setShowTutorial(false);
-              battle.startMatchmaking(battle.user.id, battle.user.rating);
+              battle.startMatchmaking(battle.user.id, battle.user.rating, 'sprint');
             }}
           />
         </SafeAreaView>
@@ -201,8 +202,8 @@ export default function BattleScreen() {
             <View style={styles.searchingPulseCircle}>
               <MaterialCommunityIcons name="robot-outline" size={48} color={colors.primary} />
             </View>
-            <Text style={styles.searchingTitle}>Finding AI Rival…</Text>
-            <Text style={styles.searchingSub}>Training Match • Rating range ±50 ELO</Text>
+            <Text style={styles.searchingTitle}>Finding Opponent…</Text>
+            <Text style={styles.searchingSub}>Live Match • Rating range ±50 ELO</Text>
           </View>
         </SafeAreaView>
       </View>
@@ -253,13 +254,13 @@ export default function BattleScreen() {
   }
 
   // 4. PLAYING STATE (60-SECOND DUEL WITH VERTICAL ARITHMETIC & NUMERIC KEYPAD)
-  const isLowTime = battle.timeLeft <= 10;
-  const isMidTime = battle.timeLeft <= 20 && battle.timeLeft > 10;
+  const isLowTime = serverTimeLeft <= 10;
+  const isMidTime = serverTimeLeft <= 20 && serverTimeLeft > 10;
   const verticalLines = formatVerticalLines();
 
   return (
     <View style={styles.root}>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
         {/* ── TOP HEADER WITH MINIMAL SCORE & 60s TIMER ── */}
         <View style={styles.clockHeader}>
           <View style={styles.headerTopRow}>
@@ -282,7 +283,7 @@ export default function BattleScreen() {
               animatedTimerStyle,
             ]}
           >
-            00:{battle.timeLeft < 10 ? `0${battle.timeLeft}` : battle.timeLeft}
+            00:{serverTimeLeft < 10 ? `0${serverTimeLeft}` : serverTimeLeft}
           </Animated.Text>
 
           {/* Live Score Progress Bars */}

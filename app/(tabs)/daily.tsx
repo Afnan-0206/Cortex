@@ -27,6 +27,8 @@ import { useUserStore } from '../../src/store/userStore';
 import { secureStorage } from '../../lib/secureStorage';
 import { supabase } from '../../lib/supabase';
 
+const STORAGE_KEY = 'cortex_user_profile_v3';
+
 interface SectionConfig {
   id: number;
   title: string;
@@ -177,7 +179,7 @@ export default function DailyChallengeScreen() {
 
             // Update Zustand state & Storage
             useUserStore.setState({ profile: updatedProfile });
-            secureStorage.setItem('cortex_profile_v2', JSON.stringify(updatedProfile)).catch(() => {});
+            secureStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
 
             // Update daily missions
             useUserStore.getState().updateMissionProgress('workout', 1);
@@ -214,7 +216,7 @@ export default function DailyChallengeScreen() {
 
   return (
     <View style={styles.root}>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}

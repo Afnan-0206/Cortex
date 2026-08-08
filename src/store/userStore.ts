@@ -11,7 +11,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { secureStorage } from '../../lib/secureStorage';
 
-const ASYNC_STORAGE_KEY = 'cortex_profile_v2';
+const STORAGE_KEY = 'cortex_user_profile_v3';
 
 export const DEFAULT_PROFILE: UserProfile = {
   name: 'Athlete',
@@ -187,6 +187,11 @@ export const useUserStore = create<UserStore>()(
           const todayStr = new Date().toISOString().split('T')[0];
           const isAuthenticated = !!session;
 
+          // The profile is already hydrated from secure storage via persist middleware.
+          // Only merge authoritative server data (xp, coins, streak, best_streak, username).
+          // Local-only fields (dailyProgress, dailyRewardClaimed, dailyMissions, etc.) should
+          // remain from persisted storage unless server explicitly indicates a new day.
+
           let dbProfileData: any = null;
           let dbDailyProgress: any = null;
           if (session?.user) {
@@ -213,22 +218,27 @@ export const useUserStore = create<UserStore>()(
 
           const isNewDay = !!currentProfile.lastCompletedDate && currentProfile.lastCompletedDate !== todayStr;
 
+          // Daily progress: prefer server if today is done, otherwise use persisted local progress
           const dailyProgressForToday = isTodayDone
             ? 4
             : isNewDay
             ? 0
             : Math.max(dbDailyProgress?.completed_sections ?? 0, currentProfile.dailyProgress ?? 0);
 
+          // Daily reward claimed: prefer server if today is done, otherwise use persisted value
           const dailyRewardClaimedForToday = isTodayDone
             ? true
             : isNewDay
             ? false
             : (currentProfile.dailyRewardClaimed ?? false);
 
+          // Daily missions: reset progress on new day but preserve structure
+          // Only reset current/claimed if it's a new day; otherwise keep persisted progress
           const dailyMissionsForToday = isNewDay
             ? (DEFAULT_PROFILE.dailyMissions ?? []).map((m) => ({ ...m, current: 0, claimed: false }))
             : (currentProfile.dailyMissions ?? DEFAULT_PROFILE.dailyMissions);
 
+          // Authoritative server values take precedence for these fields
           const finalXP = Math.max(dbProfileData?.xp ?? 0, dbProfileData?.rating ?? 0, currentProfile.brainPoints ?? 0);
           const finalCoins = Math.max(dbProfileData?.coins ?? 0, currentProfile.coins ?? 0);
           const finalStreak = Math.max(dbProfileData?.streak ?? 0, currentProfile.streak ?? 0);
@@ -236,19 +246,23 @@ export const useUserStore = create<UserStore>()(
 
           const mergedProfile: UserProfile = {
             ...DEFAULT_PROFILE,
-            ...currentProfile,
+            ...currentProfile, // persisted local state (missions, badges, quests, etc.)
+            // Server-authoritative overrides
             isLoggedIn: isAuthenticated,
             name: dbProfileData?.username || currentProfile.name || 'Athlete',
             brainPoints: finalXP,
             streak: finalStreak,
             longestStreak: finalBestStreak,
             coins: finalCoins,
+            // Computed daily state
             dailyProgress: dailyProgressForToday,
             dailyRewardClaimed: dailyRewardClaimedForToday,
             dailyMissions: dailyMissionsForToday,
             first_game_completed: dbProfileData?.first_game_completed ?? currentProfile.first_game_completed ?? false,
+            // Streak freeze state (local only)
             streakFreezes: currentProfile.streakFreezes ?? 0,
             lastFreezeGrantedStreak: currentProfile.lastFreezeGrantedStreak ?? 0,
+            // 7-day reward cycle (local only)
             dailyRewardCycleDay: currentProfile.dailyRewardCycleDay ?? 1,
             lastDailyRewardClaimDate: currentProfile.lastDailyRewardClaimDate ?? null,
             badges: currentProfile.badges ?? [],
@@ -424,7 +438,7 @@ export const useUserStore = create<UserStore>()(
     set({ profile: draftProfile, activeSession: null });
 
     try {
-      await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(draftProfile));
+      await secureStorage.setItem(STORAGE_KEY, JSON.stringify(draftProfile));
       
       // Execute Server-Authoritative RPC (Phase 6 Security Fix)
       const { data: { session: currentAuthSession } } = await supabase.auth.getSession();
@@ -459,13 +473,13 @@ export const useUserStore = create<UserStore>()(
 
   resetProfile: async () => {
     set({ profile: DEFAULT_PROFILE, activeSession: null });
-    await secureStorage.removeItem(ASYNC_STORAGE_KEY).catch(() => {});
+    await secureStorage.removeItem(STORAGE_KEY).catch(() => {});
   },
 
   setBP: async (bp: number) => {
     set((state) => {
       const updated = { ...state.profile, brainPoints: bp };
-      secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updated)).catch(() => {});
+      secureStorage.setItem(STORAGE_KEY, JSON.stringify(updated)).catch(() => {});
       return { profile: updated };
     });
   },
@@ -488,13 +502,13 @@ export const useUserStore = create<UserStore>()(
     };
 
     set({ profile: updatedProfile });
-    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+    await secureStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
   },
 
   claimDailyReward: async () => {
     const { profile } = get();
     const currentProgress = profile.dailyProgress ?? 0;
-    if (profile.dailyRewardClaimed || currentProgress < 6) {
+    if (profile.dailyRewardClaimed || currentProgress < 4) {
       return { xpEarned: 0 };
     }
 
@@ -506,7 +520,7 @@ export const useUserStore = create<UserStore>()(
     };
 
     set({ profile: updatedProfile });
-    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+    await secureStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
 
     return { xpEarned };
   },
@@ -538,7 +552,7 @@ export const useUserStore = create<UserStore>()(
     };
 
     set({ profile: updatedProfile });
-    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+    await secureStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
   },
 
   updateQuestProgress: async (questId: string, progress: number) => {
@@ -552,7 +566,7 @@ export const useUserStore = create<UserStore>()(
     };
 
     set({ profile: updatedProfile });
-    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+    await secureStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
   },
 
   incrementStreak: async () => {
@@ -572,7 +586,7 @@ export const useUserStore = create<UserStore>()(
     };
 
     set({ profile: updatedProfile });
-    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+    await secureStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
   },
 
   grantFreezeIfEligible: async () => {
@@ -591,7 +605,7 @@ export const useUserStore = create<UserStore>()(
         lastFreezeGrantedStreak: milestone,
       };
       set({ profile: updatedProfile });
-      await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+      await secureStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
       return true;
     }
     return false;
@@ -618,7 +632,7 @@ export const useUserStore = create<UserStore>()(
         lastCompletedDate: yesterdayStr, // set to yesterday so streak continues
       };
       set({ profile: updatedProfile });
-      await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+      await secureStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
       return true;
     }
     return false;
@@ -662,7 +676,7 @@ export const useUserStore = create<UserStore>()(
     };
 
     set({ profile: updatedProfile });
-    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+    await secureStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
 
     // Track analytics event
     try {
@@ -694,7 +708,7 @@ export const useUserStore = create<UserStore>()(
     };
 
     set({ profile: updatedProfile });
-    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+    await secureStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
   },
 
   claimMissionReward: async (missionId: string) => {
@@ -718,7 +732,7 @@ export const useUserStore = create<UserStore>()(
     };
 
     set({ profile: updatedProfile });
-    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+    await secureStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
 
     try {
       const { analytics } = require('../../lib/analytics');
@@ -740,7 +754,7 @@ export const useUserStore = create<UserStore>()(
     };
 
     set({ profile: updatedProfile });
-    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+    await secureStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
   },
 
   setLoggedInState: async (isLoggedIn: boolean, email?: string, name?: string) => {
@@ -753,7 +767,7 @@ export const useUserStore = create<UserStore>()(
     };
 
     set({ profile: updatedProfile });
-    await secureStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
+    await secureStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProfile)).catch(() => {});
   },
 
   logout: async () => {

@@ -470,6 +470,7 @@ const mascotStyles = StyleSheet.create({
 
 export default function ArenaHomeScreen() {
   const router = useRouter();
+  // Use granular selectors to avoid re-renders when unrelated state changes
   const profile = useUserStore((state) => state.profile);
   const loadProfile = useUserStore((state) => state.loadProfile);
   const incrementDailyProgress = useUserStore((state) => state.incrementDailyProgress);
@@ -567,7 +568,7 @@ export default function ArenaHomeScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -1079,13 +1080,13 @@ export default function ArenaHomeScreen() {
 
             <View style={styles.dailyStatusBadgeBox}>
               <Text style={styles.dailyStatusBigText}>
-                {dailyProgress} / 6 Completed
+                {dailyProgress} / 4 Completed
               </Text>
               <Text style={styles.dailyStatusSubText}>
                 {dailyRewardClaimed
                   ? 'Awesome! You earned +250 XP today.'
-                  : dailyProgress >= 6
-                  ? 'All 6 challenges completed! Claim your reward now.'
+                  : dailyProgress >= 4
+                  ? 'All 4 challenges completed! Claim your reward now.'
                   : 'Play duels & solve puzzles to unlock your +250 XP reward!'}
               </Text>
             </View>
@@ -1121,13 +1122,13 @@ export default function ArenaHomeScreen() {
                   <Text style={styles.questSub}>Complete 2 brain challenges</Text>
                 </View>
                 <Text style={styles.questProgressTag}>
-                  {dailyProgress >= 6 ? '2/2 ✓' : `${Math.max(0, Math.min(2, dailyProgress - 4))}/2`}
+                  {dailyProgress >= 4 ? '2/2 ✓' : `${Math.max(0, Math.min(2, dailyProgress - 2))}/2`}
                 </Text>
               </View>
             </View>
 
             {/* Actions inside Modal */}
-            {dailyProgress >= 6 && !dailyRewardClaimed ? (
+            {dailyProgress >= 4 && !dailyRewardClaimed ? (
               <ScalePressable style={styles.claimRewardBtn} onPress={handleClaimReward}>
                 <MaterialCommunityIcons name="trophy" size={18} color="#000000" />
                 <Text style={styles.claimRewardText}>CLAIM +250 XP REWARD 🏆</Text>
@@ -1246,9 +1247,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#0d0e12',
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 90,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 100,
   },
 
   // ── 1. TOP HEADER ──

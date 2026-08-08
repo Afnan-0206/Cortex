@@ -249,7 +249,7 @@ export default function FlashAnzanDuelScreen() {
 
   return (
     <View style={styles.root}>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
         {/* ── 1. LOBBY PHASE ── */}
         {phase === 'lobby' && (
           <ScrollView contentContainerStyle={styles.lobbyContent} showsVerticalScrollIndicator={false}>

@@ -1,7 +1,10 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 
-// Configure notification behavior for foreground notifications
+const PERMISSION_STORAGE_KEY = 'cortex_notification_permission_v1';
+
+// Configure notification behavior for foreground notifications - must be at module level
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -22,14 +25,42 @@ export async function setupAndroidChannel(): Promise<void> {
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#84cc16',
       sound: 'default',
+      enableVibrate: true,
+      enableLights: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
+  }
+}
+
+async function getStoredPermissionStatus(): Promise<string | null> {
+  try {
+    return await SecureStore.getItemAsync(PERMISSION_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+async function setStoredPermissionStatus(status: string): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(PERMISSION_STORAGE_KEY, status);
+  } catch {
+    // ignore
   }
 }
 
 export async function requestNotificationPermissions(): Promise<boolean> {
   try {
     await setupAndroidChannel();
+    
+    // Check if we already have stored permission
+    const storedStatus = await getStoredPermissionStatus();
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    
+    // If system says granted but we don't have stored, update stored
+    if (existingStatus === 'granted' && storedStatus !== 'granted') {
+      await setStoredPermissionStatus('granted');
+    }
+    
     let finalStatus = existingStatus;
 
     if (existingStatus !== 'granted') {
@@ -38,8 +69,13 @@ export async function requestNotificationPermissions(): Promise<boolean> {
     }
 
     if (finalStatus === 'granted') {
+      await setStoredPermissionStatus('granted');
       await scheduleDailyReminders();
       return true;
+    }
+    
+    if (finalStatus === 'denied') {
+      await setStoredPermissionStatus('denied');
     }
     return false;
   } catch (error) {
@@ -108,7 +144,20 @@ export async function ensureDailyRemindersScheduled(): Promise<void> {
     const { status } = await Notifications.getPermissionsAsync();
     if (status === 'granted') {
       const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-      if (scheduled.length === 0) {
+      // Check if our specific daily reminders are scheduled
+      const isDailyTrigger = (trigger: any): boolean => trigger?.type === 'daily';
+      
+      const hasRewardReminder = scheduled.some(n => 
+        n.content.title?.includes('Daily Reward') && isDailyTrigger(n.trigger)
+      );
+      const hasMissionReminder = scheduled.some(n => 
+        n.content.title?.includes('Daily Missions') && isDailyTrigger(n.trigger)
+      );
+      const hasStreakReminder = scheduled.some(n => 
+        n.content.title?.includes("streak") && isDailyTrigger(n.trigger)
+      );
+      
+      if (!hasRewardReminder || !hasMissionReminder || !hasStreakReminder) {
         await scheduleDailyReminders();
       }
     }

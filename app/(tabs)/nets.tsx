@@ -237,7 +237,7 @@ export default function NetsScreen() {
 
   return (
     <View style={styles.root}>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
         {/* Toast error banner if optimistic rollback occurs */}
         {toastMessage && (
           <View style={styles.toastBanner}>

@@ -12,19 +12,19 @@ export interface BattlePlayer {
   name: string;
   rating: number;
   score: number;
-  progress: number; // 0 - 100
+  progress: number;
   streak: number;
 }
 
-// Circuit breaker instance protecting matchmaking against backend degradation
-const matchmakingCircuitBreaker = new CircuitBreaker<{ matchId: string }>({
+const matchmakingCircuitBreaker = new CircuitBreaker<{ matchId: string; questionIds: string[] }>({
   name: 'MatchmakingService',
   failureThreshold: 3,
-  timeoutMs: 3000,
-  resetTimeoutMs: 5000,
+  timeoutMs: 5000,
+  resetTimeoutMs: 10000,
   maxConcurrent: 5,
   fallback: async () => ({
     matchId: `match_offline_${Date.now()}`,
+    questionIds: [],
   }),
 });
 
@@ -35,26 +35,22 @@ interface BattleStoreState {
   opponent: BattlePlayer;
   currentQuestionIndex: number;
   totalQuestions: number;
-  timeLeft: number; // 60-second duel timer
+  timeLeft: number;
   earnedXP: number;
-  opponentSolveTimer: number; // Seconds until opponent auto-solves next question
+  opponentSolveTimer: number;
   questions: MathQuestion[];
   questionStartedAt: string | null;
+  questionIds: string[];
 
-  startMatchmaking: (userId: string, rating: number) => Promise<void>;
+  startMatchmaking: (userId: string, rating: number, gameMode?: string) => Promise<void>;
   subscribeToMatch: (matchId: string) => void;
   submitAnswer: (selectedAnswer: number) => boolean;
   tickTimer: () => void;
   calculateServerTimeLeft: () => number;
+  getServerTimeLeft: () => number;
   resetBattle: () => void;
 }
 
-/**
- * Generates tricky vertical column arithmetic questions:
- * - 3-digit vertical addition (e.g. 526 + 422)
- * - Vertical mixed 3-item operations (e.g. 145 + 87 - 52)
- * - Vertical division & multiplication
- */
 export const generateTrickyQuestions = (count: number = 30): MathQuestion[] => {
   const questions: MathQuestion[] = [];
 
@@ -66,7 +62,6 @@ export const generateTrickyQuestions = (count: number = 30): MathQuestion[] => {
     let answer = 0;
 
     if (type === 0) {
-      // 1. 3-Digit Vertical Addition (e.g. 526 + 422 = 948)
       const a = Math.floor(Math.random() * 450) + 120;
       const b = Math.floor(Math.random() * 450) + 120;
       operand1 = a;
@@ -74,7 +69,6 @@ export const generateTrickyQuestions = (count: number = 30): MathQuestion[] => {
       operator = '+';
       answer = a + b;
     } else if (type === 1) {
-      // 2. Mixed 3-Item Vertical Expression (e.g. 145 + 87 - 52 = 180)
       const a = Math.floor(Math.random() * 180) + 100;
       const b = Math.floor(Math.random() * 90) + 40;
       const c = Math.floor(Math.random() * 60) + 20;
@@ -83,7 +77,6 @@ export const generateTrickyQuestions = (count: number = 30): MathQuestion[] => {
       operator = '';
       answer = a + b - c;
     } else if (type === 2) {
-      // 3. Tricky Division (e.g. 384 ÷ 12 = 32)
       const divisors = [8, 9, 12, 14, 15, 16, 18, 25];
       const div = divisors[Math.floor(Math.random() * divisors.length)];
       const quotient = Math.floor(Math.random() * 35) + 12;
@@ -92,7 +85,6 @@ export const generateTrickyQuestions = (count: number = 30): MathQuestion[] => {
       operator = '÷';
       answer = quotient;
     } else if (type === 3) {
-      // 4. Mixed Multiplication + Subtraction (e.g. 14 × 6 - 18 = 66)
       const a = Math.floor(Math.random() * 15) + 8;
       const b = Math.floor(Math.random() * 8) + 4;
       const c = Math.floor(Math.random() * 25) + 10;
@@ -102,7 +94,6 @@ export const generateTrickyQuestions = (count: number = 30): MathQuestion[] => {
       operator = '';
       answer = isSub ? a * b - c : a * b + c;
     } else {
-      // 5. Vertical 2-Digit Multiplication (e.g. 35 × 11 = 385)
       const a = Math.floor(Math.random() * 35) + 15;
       const b = Math.floor(Math.random() * 12) + 6;
       operand1 = a;
@@ -148,45 +139,90 @@ export const useBattleStore = create<BattleStoreState>((set, get) => ({
   },
   currentQuestionIndex: 0,
   totalQuestions: 60,
-  timeLeft: 60, // 60-second total duel timer
+  timeLeft: 60,
   earnedXP: 0,
   opponentSolveTimer: 2,
   questions: generateTrickyQuestions(30),
   questionStartedAt: null,
+  questionIds: [],
 
-  startMatchmaking: async (userId: string, rating: number) => {
+  startMatchmaking: async (userId: string, rating: number, gameMode = 'sprint') => {
     set({ status: 'searching' });
-    analytics.track('battle_started');
+    analytics.track('battle_started', { gameMode });
 
     try {
-      const res = await matchmakingCircuitBreaker.execute(async () => {
-        const matchId = `match_${Date.now()}`;
-        return { matchId };
+      // Call the real edge function for matchmaking + question generation
+      const { data, error } = await supabase.functions.invoke('find-match', {
+        body: { userId, rating, gameMode, matchesPlayed: 15 },
       });
 
-      notifyMatchFound();
+      if (error) throw error;
 
+      if (data?.status === 'matched') {
+        notifyMatchFound();
+
+        // Fetch generated questions from edge function
+        const { data: questionsData, error: qError } = await supabase.functions.invoke('generate-questions', {
+          body: { gameMode, count: 30, userRating: rating },
+        });
+
+        let freshQuestions = generateTrickyQuestions(30);
+        let questionIds: string[] = [];
+
+        if (!qError && questionsData?.questions) {
+          freshQuestions = questionsData.questions;
+          questionIds = questionsData.questionIds || [];
+        }
+
+        const userProfile = useUserStore.getState().profile;
+        const userName = userProfile.name || 'Athlete';
+        const userRating = userProfile.brainPoints || rating || 1200;
+
+        set({
+          matchId: data.matchId,
+          status: 'playing',
+          currentQuestionIndex: 0,
+          questionStartedAt: new Date().toISOString(),
+          timeLeft: 60,
+          earnedXP: 0,
+          opponentSolveTimer: 2,
+          questions: freshQuestions,
+          questionIds,
+          user: { id: userId || 'user_local', name: userName, rating: userRating, score: 0, progress: 0, streak: 0 },
+          opponent: { id: data.opponentId || 'opp_rival', name: 'Opponent', rating: data.opponentRating || userRating + 25, score: 0, progress: 0, streak: 0 },
+        });
+
+        get().subscribeToMatch(data.matchId);
+      } else if (data?.status === 'queued') {
+        // Wait for match - poll for match creation
+        set({ status: 'searching' });
+        // In production, you'd listen to realtime for match creation
+        // For now, simulate finding a match after a delay
+        setTimeout(() => {
+          get().startMatchmaking(userId, rating, gameMode);
+        }, 5000);
+      }
+    } catch (e) {
+      console.warn('Matchmaking error:', e);
+      // Fallback to local AI
       const freshQuestions = generateTrickyQuestions(30);
       const userProfile = useUserStore.getState().profile;
       const userName = userProfile.name || 'Athlete';
       const userRating = userProfile.brainPoints || rating || 1200;
 
       set({
-        matchId: res.matchId,
+        matchId: `match_offline_${Date.now()}`,
         status: 'playing',
         currentQuestionIndex: 0,
         questionStartedAt: new Date().toISOString(),
-        timeLeft: 60, // 60-second duel
+        timeLeft: 60,
         earnedXP: 0,
         opponentSolveTimer: 2,
         questions: freshQuestions,
+        questionIds: [],
         user: { id: userId || 'user_local', name: userName, rating: userRating, score: 0, progress: 0, streak: 0 },
         opponent: { id: 'opp_rival', name: 'AI Rival', rating: userRating + 25, score: 0, progress: 0, streak: 0 },
       });
-
-      get().subscribeToMatch(res.matchId);
-    } catch (e) {
-      console.warn('Matchmaking error:', e);
     }
   },
 
@@ -235,18 +271,22 @@ export const useBattleStore = create<BattleStoreState>((set, get) => ({
     return Math.max(0, 60 - elapsedSeconds);
   },
 
+  getServerTimeLeft: () => {
+    const startedAt = get().questionStartedAt;
+    if (!startedAt) return 60;
+    const elapsedSeconds = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000);
+    return Math.max(0, 60 - elapsedSeconds);
+  },
+
   tickTimer: () => {
     const state = get();
     if (state.status !== 'playing') return;
 
-    // 1. 60-Second Match Timer Countdown
     let newTimeLeft = state.timeLeft - 1;
     if (newTimeLeft <= 0) {
-      // 60-second time expired -> Finish match and record results
       set({ timeLeft: 0, status: 'complete' });
       analytics.track('battle_completed', { matchId: state.matchId });
 
-      // Execute Server-Authoritative Match Outcome RPC (Phase 6 Security Fix)
       if (state.matchId) {
         void (async () => {
           try {
@@ -260,17 +300,15 @@ export const useBattleStore = create<BattleStoreState>((set, get) => ({
             // silent fallback
           }
         })();
-
-        bulkInsert('activity_feed', [
-          { user_id: state.user.id, action: 'match_completed', metadata: { match_id: state.matchId, score: state.user.score, xp_earned: state.earnedXP } },
-          { user_id: state.opponent.id, action: 'match_completed', metadata: { match_id: state.matchId, score: state.opponent.score, xp_earned: Math.max(10, state.earnedXP - 15) } },
-        ]).catch(() => {});
       }
+
+      bulkInsert('activity_feed', [
+        { user_id: state.user.id, action: 'match_completed', metadata: { match_id: state.matchId, score: state.user.score, xp_earned: state.earnedXP } },
+        { user_id: state.opponent.id, action: 'match_completed', metadata: { match_id: state.matchId, score: state.opponent.score, xp_earned: Math.max(10, state.earnedXP - 15) } },
+      ]).catch(() => {});
       return;
     }
 
-    // 2. Independent Opponent Auto-Solver Engine
-    // Opponent solves questions every 2-3 seconds independently during 60s
     const currentOpp = state.opponent;
     let nextOpponentScore = currentOpp.score;
     let oppTimer = state.opponentSolveTimer - 1;
@@ -278,25 +316,25 @@ export const useBattleStore = create<BattleStoreState>((set, get) => ({
     if (oppTimer <= 0) {
       const isOppCorrect = Math.random() < 0.82;
       nextOpponentScore = isOppCorrect ? currentOpp.score + 1 : currentOpp.score;
-      oppTimer = Math.floor(Math.random() * 2) + 2; // 2 to 3 seconds
+      oppTimer = Math.floor(Math.random() * 2) + 2;
     }
 
     const userProgress = Math.min(100, Math.round((state.user.score / 25) * 100));
     const oppProgress = Math.min(100, Math.round((nextOpponentScore / 25) * 100));
 
-    set({
+    set((prev) => ({
       timeLeft: newTimeLeft,
       opponentSolveTimer: oppTimer,
       user: {
-        ...state.user,
+        ...prev.user,
         progress: userProgress,
       },
       opponent: {
-        ...currentOpp,
+        ...prev.opponent,
         score: nextOpponentScore,
         progress: oppProgress,
       },
-    });
+    }));
   },
 
   submitAnswer: (selectedAnswer: number) => {
@@ -314,7 +352,6 @@ export const useBattleStore = create<BattleStoreState>((set, get) => ({
     let nextIndex = state.currentQuestionIndex + 1;
     let currentQuestionsList = [...state.questions];
 
-    // If we're reaching the end of generated questions, append 20 more so the stream never runs out in 60s
     if (nextIndex >= currentQuestionsList.length - 2) {
       currentQuestionsList = [...currentQuestionsList, ...generateTrickyQuestions(20)];
     }
@@ -363,6 +400,7 @@ export const useBattleStore = create<BattleStoreState>((set, get) => ({
       earnedXP: 0,
       opponentSolveTimer: 2,
       questions: generateTrickyQuestions(30),
+      questionIds: [],
       user: { id: 'user_local', name: 'Afnan', rating: 1420, score: 0, progress: 0, streak: 0 },
       opponent: { id: 'opp_riya', name: 'Riya', rating: 1452, score: 0, progress: 0, streak: 0 },
     });

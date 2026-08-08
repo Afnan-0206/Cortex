@@ -119,7 +119,7 @@ export default function ProfileScreen() {
   const handleName = `@${currentUsername.toLowerCase().replace(/\s+/g, '_')}`;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
